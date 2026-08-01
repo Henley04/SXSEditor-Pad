@@ -1,10 +1,6 @@
 use std::sync::Mutex;
 use tauri::State;
 
-// Mobile entry point (required for Android/iOS builds)
-#[cfg(mobile)]
-#[tauri::mobile_entry_point]
-
 // Application state
 pub struct AppState {
     pub settings: Mutex<serde_json::Value>,
@@ -137,6 +133,7 @@ async fn get_platform_info() -> Result<serde_json::Value, String> {
     }))
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
