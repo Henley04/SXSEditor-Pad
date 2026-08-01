@@ -1,0 +1,520 @@
+/* Shared component styles — imported via common.css */
+
+/* ==================== 0. Motion Keyframes ==================== */
+
+@keyframes button-hover-glow {
+  0% { box-shadow: 0 0 0 0 transparent; }
+  100% { box-shadow: 0 0 12px 2px var(--accent-glow); }
+}
+
+@keyframes button-press {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+
+@keyframes window-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlay-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes dialog-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes dialog-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+    filter: blur(2px);
+  }
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes toast-exit {
+  from {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+}
+
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes loading-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ==================== 1. Toolbar ==================== */
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  background: linear-gradient(180deg, var(--bg-toolbar-start) 0%, var(--bg-toolbar-end) 100%);
+  color: var(--fg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--space-1);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  z-index: 10;
+}
+
+#toolbar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--toolbar-accent-line, 0);
+  background: var(--accent);
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 22px;
+  background: linear-gradient(180deg, transparent, var(--border-default), transparent);
+  margin: 0 var(--space-3);
+  flex-shrink: 0;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+#toolbar button {
+  background: var(--bg-button);
+  color: var(--fg-muted);
+  border: 1px solid var(--button-secondary-border);
+  border-radius: var(--radius-md);
+  clip-path: var(--clip-button, none);
+  padding: var(--space-2) 10px;
+  cursor: pointer;
+  font-size: var(--font-base);
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              border-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard),
+              transform var(--motion-fast) var(--ease-standard),
+              box-shadow var(--motion-fast) var(--ease-standard);
+  white-space: nowrap;
+  position: relative;
+  overflow: hidden;
+}
+
+#toolbar button:hover {
+  background: var(--bg-button-hover);
+  color: var(--fg-primary);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px var(--accent-soft);
+}
+
+#toolbar button:active {
+  background: var(--bg-button-active);
+  transform: translateY(0) scale(0.97);
+  box-shadow: none;
+  transition-duration: 0.06s;
+  transition-timing-function: var(--ease-standard);
+}
+
+#toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+#toolbar button.btn-primary,
+#toolbar button.btn-primary.active {
+  background: var(--bg-button-primary);
+  color: var(--fg-on-accent);
+  border-color: var(--accent-pressed);
+}
+
+#toolbar button.btn-primary:hover {
+  background: var(--bg-button-primary-hover);
+  box-shadow: 0 2px 12px var(--accent-glow);
+}
+
+#toolbar button.btn-primary:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 0 6px var(--accent-soft);
+}
+
+#toolbar button.btn-success {
+  background: var(--bg-button-success);
+  color: var(--fg-on-success);
+  border-color: var(--color-green-300);
+}
+
+#toolbar button.btn-success:hover {
+  background: var(--bg-button-success-hover);
+  box-shadow: 0 2px 12px var(--success-glow);
+}
+
+#toolbar button.btn-danger {
+  background: var(--bg-button-danger);
+  color: var(--fg-on-accent);
+  border-color: var(--danger);
+}
+
+#toolbar button.btn-danger:hover {
+  background: var(--bg-button-danger-hover);
+  box-shadow: 0 2px 12px var(--danger-glow);
+}
+
+#toolbar input[type="number"] {
+  width: 50px;
+  background: var(--bg-input);
+  color: var(--fg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-3);
+  text-align: center;
+  font-size: var(--font-base);
+  transition: border-color var(--motion-fast) var(--ease-standard),
+              box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+#toolbar input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+#toolbar label {
+  font-size: var(--font-base);
+  color: var(--fg-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ==================== 2. Loading Overlay ==================== */
+
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-slow) var(--ease-standard);
+  backdrop-filter: blur(4px);
+  animation: overlay-fade-in var(--motion-slow) var(--ease-standard);
+}
+
+.loading-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  animation: dialog-enter 0.35s var(--ease-emphasized);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-text {
+  color: var(--fg-primary);
+  font-size: var(--font-lg);
+  font-weight: 500;
+  animation: loading-pulse 1.5s ease-in-out infinite;
+}
+
+/* ==================== 3. Modal ==================== */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: overlay-fade-in var(--motion-base) var(--ease-standard);
+  backdrop-filter: blur(4px);
+}
+
+.modal-dialog {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  clip-path: var(--clip-panel, none);
+  padding: var(--space-8);
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-xl), 0 0 40px var(--accent-softer);
+  animation: dialog-enter 0.3s var(--ease-emphasized);
+}
+
+.modal-title {
+  font-size: var(--font-xl);
+  font-weight: 600;
+  color: var(--fg-primary);
+  margin-bottom: var(--space-4);
+}
+
+.modal-hint {
+  font-size: var(--font-base);
+  color: var(--fg-muted);
+  margin-bottom: var(--space-6);
+  line-height: 1.5;
+}
+
+/* ==================== 4. Toast ==================== */
+
+.toast {
+  position: fixed;
+  bottom: var(--space-7);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--space-3) var(--space-6);
+  background: var(--bg-elevated);
+  color: var(--fg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--font-base);
+  z-index: 10000;
+  max-width: 80%;
+  animation: toast-enter 0.3s var(--ease-emphasized);
+}
+
+.toast-success {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.toast-error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.toast-info {
+  border-color: var(--accent-glow);
+  color: var(--accent-fg);
+}
+
+/* ==================== 5. Info Box ==================== */
+
+.info-box {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  font-size: var(--font-base);
+  line-height: 1.6;
+  margin-top: 10px;
+  transition: border-color var(--motion-base) var(--ease-standard),
+              box-shadow var(--motion-base) var(--ease-standard);
+}
+
+.info-box:hover {
+  border-left-color: var(--accent-hover);
+  box-shadow: 0 4px 16px var(--accent-softer);
+}
+
+.info-box strong {
+  color: var(--accent);
+  font-size: var(--font-md);
+}
+
+/* ==================== 6. Section Title (panel headers) ==================== */
+
+.section-title--panel {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+/* ==================== 7. Form Group ==================== */
+
+.form-group {
+  margin-bottom: var(--space-5);
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  margin-bottom: var(--space-3);
+  font-weight: 500;
+}
+
+.form-group input[type="text"] {
+  width: 100%;
+  padding: var(--space-4) 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--fg-primary);
+  font-size: var(--font-md);
+  transition: border-color var(--motion-fast) var(--ease-standard),
+              box-shadow var(--motion-fast) var(--ease-standard),
+              background var(--motion-fast) var(--ease-standard);
+}
+
+.form-group input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.form-group input[type="text"]::placeholder {
+  color: var(--fg-disabled);
+}
+
+/* ==================== 8. Small Button ==================== */
+
+.btn-small {
+  padding: 5px 10px;
+  font-size: var(--font-sm);
+  background: var(--bg-button);
+  color: var(--fg-muted);
+  border: 1px solid var(--button-secondary-border);
+  border-radius: var(--radius-md);
+  clip-path: var(--clip-button, none);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              border-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard),
+              transform var(--motion-fast) var(--ease-standard),
+              box-shadow var(--motion-fast) var(--ease-standard);
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-small:hover {
+  background: var(--bg-button-hover);
+  color: var(--fg-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px var(--shadow-color);
+}
+
+.btn-small:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: none;
+  transition-duration: 0.06s;
+  transition-timing-function: var(--ease-standard);
+}
+
+.btn-small.btn-danger {
+  background: var(--bg-button-danger);
+  color: var(--fg-on-accent);
+  border-color: var(--danger);
+}
+
+.btn-small.btn-danger:hover {
+  background: var(--bg-button-danger-hover);
+  box-shadow: 0 2px 8px var(--danger-glow);
+}
+
+.btn-small.btn-primary {
+  background: var(--bg-button-primary);
+  color: var(--fg-on-accent);
+  border-color: var(--accent-hover);
+  font-size: var(--font-base);
+  padding: 7px 14px;
+  font-weight: 500;
+}
+
+.btn-small.btn-primary:hover {
+  background: var(--bg-button-primary-hover);
+  box-shadow: 0 2px 12px var(--accent-glow);
+  transform: translateY(-1px);
+}
+
+.btn-small.btn-primary:active {
+  transform: translateY(0) scale(0.97);
+  box-shadow: 0 0 6px var(--accent-soft);
+}
+
+.btn-small:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

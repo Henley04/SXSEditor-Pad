@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicedoc/tauri/refs/heads/dev/crates/tauri-config-schema/schema.json",
+  "productName": "SXSEditor-Pad",
+  "version": "1.0.0",
+  "identifier": "com.sxseditor.pad",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npx webpack serve --mode development",
+    "beforeBuildCommand": "npx webpack --mode production"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "SXSEditor-Pad",
+        "url": "main_window/index.html",
+        "width": 1024,
+        "height": 768,
+        "minWidth": 768,
+        "minHeight": 512,
+        "resizable": true,
+        "fullscreen": false,
+        "maximized": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost; connect-src 'self' https://modelscope.cn; font-src 'self' data:; worker-src 'self' blob:; child-src 'self' blob:;"
+    }
+  },
+  "plugins": {
+    "fs": {
+      "scope": {
+        "allow": ["$APPDATA/**", "$RESOURCE/**", "$HOME/**", "$TEMP/**"],
+        "deny": []
+      }
+    }
+  }
+}

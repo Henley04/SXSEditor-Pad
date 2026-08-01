@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Application Updates — SXSEditor Docs</title>
+  <link rel="icon" href="../images/icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand" href="../index.html">
+        <img src="../images/icon.png" alt="SXSEditor" class="brand-logo" />
+        <span class="brand-name" data-i18n="brand.name">SXSEditor</span>
+      </a>
+      <nav class="header-nav" data-header-nav>
+        <a class="nav-link" href="../index.html" data-i18n="nav.home">Home</a>
+        <a class="nav-link" href="quick-start.html" data-i18n="nav.user">User Guide</a>
+        <a class="nav-link" href="../dev/build.html" data-i18n="nav.dev">Developer Guide</a>
+        <a class="nav-link" href="https://github.com/Henley04/SXSEditor" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          <span data-i18n="nav.github">GitHub</span>
+        </a>
+      </nav>
+      <div class="header-actions">
+        <div class="lang-switcher" role="group" aria-label="Language">
+          <button class="lang-btn" data-lang-btn="en" type="button">EN</button>
+          <button class="lang-btn" data-lang-btn="zh" type="button">中文</button>
+        </div>
+        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Toggle theme">
+          <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <button class="menu-btn" data-menu-btn type="button" aria-label="Open menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar scrollbar-thin" data-nav-section="user"></aside>
+
+    <main class="prose">
+      <nav class="breadcrumb">
+        <a href="../index.html" data-i18n="nav.home">Home</a>
+        <span class="sep">/</span>
+        <a href="quick-start.html" data-i18n="sidebar.user">User Guide</a>
+        <span class="sep">/</span>
+        <span data-lang="en">Application Updates</span><span data-lang="zh">应用更新</span>
+      </nav>
+
+      <h1>
+        <span data-lang="en">Application Updates</span>
+        <span data-lang="zh">应用更新</span>
+      </h1>
+
+      <p data-lang="en">This page tracks notable user-facing changes to the SXSEditor application, grouped by release version. Application version numbers are auto-incremented by GitHub CI. For the full commit history, see the <a href="https://github.com/Henley04/SXSEditor/commits/master">GitHub commit log</a>. Changes released before v1.0.5 are not tracked here.</p>
+      <p data-lang="zh">本页按发布版本追踪 SXSEditor 应用面向用户的重大变更。应用版本号由 GitHub CI 自动递增。完整提交历史请查看 <a href="https://github.com/Henley04/SXSEditor/commits/master">GitHub 提交日志</a>。v1.0.5 之前的变更不再追踪。</p>
+
+      <div class="callout note">
+        <div class="callout-icon">ℹ️</div>
+        <div class="callout-body">
+          <p data-lang="en">Looking for model / inference changes? See <a href="model-updates.html">Model Updates</a>.</p>
+          <p data-lang="zh">查找模型 / 推理相关变更？请见 <a href="model-updates.html">模型更新</a>。</p>
+        </div>
+      </div>
+
+      <h2>
+        <span data-lang="en">v1.0.9</span>
+        <span data-lang="zh">v1.0.9</span>
+      </h2>
+
+      <h3>
+        <span data-lang="en">New Features</span>
+        <span data-lang="zh">新功能</span>
+      </h3>
+      <ul>
+        <li><span data-lang="en"><strong>Note context menu with vibrato &amp; fade</strong> — right-click a note in the Fragment Editor (MIDI or Pitch mode) to open a new note context menu for fine-tuning per-note <strong>vibrato</strong> and <strong>fade in / fade out</strong>. The menu acts on the right-clicked note, or on the entire selection when the note is part of a multi-note selection.</span><span data-lang="zh"><strong>音符右键菜单：颤音与渐强渐弱</strong>——在分片编辑器中右键音符（MIDI 或 Pitch 模式）即可打开新的音符右键菜单，逐音符微调<strong>颤音</strong>与<strong>渐入 / 渐出</strong>。菜单作用于被右键的音符；若该音符已在多选集合中，则作用于全部选中音符。</span></li>
+        <li><span data-lang="en"><strong>Fine-tunable vibrato</strong> — vibrato parameters support fine control: <em>Depth</em> (0–200¢), <em>Rate</em> (2–10 Hz), <em>Start point</em> (0–80%), <em>Length</em> (20–100%), and <em>Fade-in ramp</em> (0–100%). One-click presets (<em>Soft</em> / <em>Medium</em> / <em>Strong</em>) and a <em>Clear Effects</em> button are included. Vibrato is layered additively over the existing pitch curve, so it is fully compatible with anchor points and brush strokes.</span><span data-lang="zh"><strong>可微调的颤音</strong>——颤音参数支持精细控制：<em>幅度</em>（0–200¢）、<em>频率</em>（2–10 Hz）、<em>起始点</em>（0–80%）、<em>长度</em>（20–100%）、<em>渐入比例</em>（0–100%）。提供一键预设（<em>柔和</em> / <em>中等</em> / <em>强烈</em>）与<em>清除效果</em>按钮。颤音以叠加方式作用于已有音高曲线之上，与锚点、画笔笔触完全兼容。</span></li>
+        <li><span data-lang="en"><strong>Per-note fade in / fade out</strong> — apply per-note volume fades (0–500 ms each) that take effect in both real-time preview and WAV export, as a post-processing gain on the synthesized audio. One-click presets (<em>Fade In</em> / <em>Fade Out</em> / <em>Both</em>) are included.</span><span data-lang="zh"><strong>逐音符渐入 / 渐出</strong>——可对单个音符施加音量渐变（各 0–500 ms），实时预览与 WAV 导出均生效，作为后处理增益叠加在合成音频之上。提供一键预设（<em>渐强</em> / <em>渐弱</em> / <em>渐入渐出</em>）。</span></li>
+        <li><span data-lang="en"><strong>Visual effect indicators on notes</strong> — notes with vibrato enabled show a small sine-wave marker at the top-left; notes with fade in/out show semi-transparent triangles at the corresponding edge, sized proportionally to the fade duration. The pitch curve in Pitch mode also renders the actual vibrato oscillation.</span><span data-lang="zh"><strong>音符效果视觉指示</strong>——启用颤音的音符左上角会显示小正弦波标记；启用渐入 / 渐出的音符在对应边缘绘制半透明三角形，宽度按渐变时长比例缩放。Pitch 模式下的音高曲线也会渲染实际颤音振荡。</span></li>
+        <li><span data-lang="en"><strong>Full undo/redo &amp; backward compatibility</strong> — all vibrato and fade adjustments support undo/redo; slider drags commit one history entry on release. Old projects without vibrato/fade fields are auto-normalized on load.</span><span data-lang="zh"><strong>完整撤销 / 重做与向后兼容</strong>——所有颤音与渐变调整均支持撤销 / 重做；滑块拖动在松开时提交一条历史记录。不含颤音 / 渐变字段的旧项目在加载时自动补全默认值。</span></li>
+      </ul>
+
+      <h3>
+        <span data-lang="en">Documentation</span>
+        <span data-lang="zh">文档</span>
+      </h3>
+      <ul>
+        <li><span data-lang="en">Added a new <em>Note Effects: Vibrato &amp; Fade</em> section to the Fragment Editor guide, documenting the right-click note menu, all vibrato/fade parameters, presets, visual indicators, and compatibility with pitch curves.</span><span data-lang="zh">分片编辑器指南新增<em>音符效果：颤音与渐强渐弱</em>章节，文档化右键音符菜单、所有颤音 / 渐变参数、预设、视觉指示以及与音高曲线的兼容性。</span></li>
+        <li><span data-lang="en">Corrected the Kanji Settings access path: right-clicking a note body now opens the note context menu; the Kanji Settings menu is reached by right-clicking the group bracket/label, or via the <em>Kanji Settings</em> button inside the note menu (shown for kana-in-group notes and single ungrouped kanji notes).</span><span data-lang="zh">更正汉字设置入口：右键音符本体现打开音符右键菜单；汉字设置菜单通过右键分组连接线 / 标签进入，或在音符菜单内点击<em>汉字设置</em>按钮进入（对分组内假名音符与单个未分组汉字音符均显示）。</span></li>
+        <li><span data-lang="en">Documented the <em>Auto Shift</em> checkbox in the Fragment Editor toolbar.</span><span data-lang="zh">补充文档化分片编辑器工具栏中的 <em>Auto Shift</em> 复选框。</span></li>
+      </ul>
+
+      <h2>
+        <span data-lang="en">v1.0.8</span>
+        <span data-lang="zh">v1.0.8</span>
+      </h2>
+
+      <h3>
+        <span data-lang="en">New Features</span>
+        <span data-lang="zh">新功能</span>
+      </h3>
+      <ul>
+        <li><span data-lang="en"><strong>Draggable playhead with seek</strong> — the playhead on the main page, audio preprocess page, and fragment editor can now be dragged to any position to start playback from there. A tooltip shows the current time while dragging, and playback resumes from the dropped position using cached audio when possible.</span><span data-lang="zh"><strong>可拖拽播放头跳转</strong>——主页面、音频预处理页面与分片编辑器的播放头现可拖拽到任意位置开始播放。拖拽时显示当前时间提示，松开后尽可能复用缓存音频从该位置继续播放。</span></li>
+        <li><span data-lang="en"><strong>diffStep chunked inference for faster preview</strong> — a new <em>diffStep chunked inference</em> setting splits the diffusion loop into chunks so audio can be streamed per chunk during preview, dramatically reducing time-to-first-audio for long fragments.</span><span data-lang="zh"><strong>diffStep 分块推理加速预览</strong>——新增「diffStep 分块推理」设置，将扩散循环切分为多个 chunk，预览时可按 chunk 流式推送音频，大幅缩短长分片的首音到达时间。</span></li>
+        <li><span data-lang="en"><strong>Time-ordered multi-fragment streaming for Play All</strong> — Play All now interleaves inference chunks across all fragments in global time order, so multiple fragments are synthesized and played back as one continuous timeline instead of sequentially.</span><span data-lang="zh"><strong>Play All 多分片时间顺序流式播放</strong>——Play All 现按全局时间顺序在所有分片间交错推理 chunk，多个分片作为一条连续时间线合成与播放，而非顺序逐个处理。</span></li>
+        <li><span data-lang="en"><strong>Per-chunk audio streaming via onChunkMel</strong> — the preview path now streams audio per diffusion chunk through a new <code>onChunkMel</code> callback, enabling true streaming synthesis instead of waiting for the entire diffusion loop to finish.</span><span data-lang="zh"><strong>通过 onChunkMel 按 chunk 流式推送音频</strong>——预览路径现通过新的 <code>onChunkMel</code> 回调按 diffusion chunk 流式推送音频，实现真正的流式合成，无需等待整个扩散循环完成。</span></li>
+        <li><span data-lang="en"><strong>Comprehensive Japanese pronunciation optimization</strong> — Japanese pronunciation has been comprehensively tuned. The default Japanese vocalization mode is now <strong>Hybrid Phonemes</strong>, and the hybrid mode now also covers Cantonese <code>yue_</code> phonemes.</span><span data-lang="zh"><strong>日语发音全面优化</strong>——日语发音已全面调校。默认日语发声方式改为「<strong>混合音素</strong>」，混合模式还新增粤语 <code>yue_</code> 音素覆盖。</span></li>
+        <li><span data-lang="en"><strong>Expanded kanji dictionary to all 2136 Jōyō kanji</strong> — the Japanese g2p kanji dictionary now covers all 2136 commonly-used kanji, greatly reducing the chance of unresolved kanji in Japanese lyrics.</span><span data-lang="zh"><strong>汉字字典扩展至全部 2136 个常用汉字</strong>——日语 g2p 汉字字典现覆盖全部 2136 个常用汉字，大幅降低日语歌词中出现未解析汉字的概率。</span></li>
+        <li><span data-lang="en"><strong>MIDI import BPM / time signature sync prompt</strong> — when importing a MIDI file, SXSEditor now asks whether to sync the project's BPM and time signature from the file, instead of always silently applying them.</span><span data-lang="zh"><strong>MIDI 导入 BPM / 拍号同步提示</strong>——导入 MIDI 文件时，SXSEditor 现会询问是否从文件同步项目的 BPM 与拍号，而非始终静默应用。</span></li>
+        <li><span data-lang="en"><strong>ORT session options exposed as settings</strong> — advanced ONNX Runtime session options are now user-configurable in Settings, letting power users tune execution providers and thread counts.</span><span data-lang="zh"><strong>ORT session 选项开放为设置</strong>——高级 ONNX Runtime session 选项现可在设置中由用户配置，便于进阶用户调校执行提供器与线程数。</span></li>
+        <li><span data-lang="en"><strong>Model status overview in Settings</strong> — a new model status overview section in Settings shows installed precisions and versions at a glance, and refreshes after settings load to reflect the active precision.</span><span data-lang="zh"><strong>设置页模型状态总览</strong>——设置页新增模型状态总览分区，一目了然显示已安装精度与版本；设置加载后会刷新以反映当前生效精度。</span></li>
+        <li><span data-lang="en"><strong>Base model precision separated from diffusion models</strong> — base model precision is now configured independently from diffusion models, so a single base precision can be reused across multiple diffusion model precisions.</span><span data-lang="zh"><strong>基础模型精度与扩散模型分离</strong>——基础模型精度现与扩散模型独立配置，单个基础精度可被多个扩散模型精度复用。</span></li>
+        <li><span data-lang="en"><strong>Rebuilt landing page</strong> — the official website's landing page was rebuilt with a new template, bilingual CN/EN support, and a Chinese 洛天依 demo audio.</span><span data-lang="zh"><strong>官网首页重建</strong>——官网首页已基于新模板重建，支持中英双语并提供中文洛天依演示音频。</span></li>
+      </ul>
+
+      <h3>
+        <span data-lang="en">Performance</span>
+        <span data-lang="zh">性能优化</span>
+      </h3>
+      <ul>
+        <li><span data-lang="en"><strong>Startup optimization v2</strong> — heavy modules are now deferred until after the splash window paints, the <code>app:getVersion</code> regression is fixed, audio / model / update IPC is deferred, and unused Chromium features (spellcheck, etc.) are disabled for faster cold start.</span><span data-lang="zh"><strong>启动优化 v2</strong>——重型模块推迟到 splash 窗口绘制完成后再加载，修复了 <code>app:getVersion</code> 回归，音频 / 模型 / 更新 IPC 推迟初始化，并禁用了未使用的 Chromium 特性（拼写检查等）以加速冷启动。</span></li>
+        <li><span data-lang="en"><strong>Inline SVG splash for instant first paint</strong> — the splash screen SVG is now inlined into <code>splash.html</code> for an instant first paint instead of waiting for an external file.</span><span data-lang="zh"><strong>Splash SVG 内联首帧即时绘制</strong>——启动画面 SVG 现内联到 <code>splash.html</code> 中，首帧即时绘制，无需等待外部文件加载。</span></li>
+        <li><span data-lang="en"><strong>Long-fragment playhead drag &amp; fragment move lag fixed</strong> — playhead dragging on long fragments and moving fragments on the timeline are now smooth, eliminating the previous lag.</span><span data-lang="zh"><strong>长分片播放头拖拽与分片移动卡顿修复</strong>——长分片上的播放头拖拽与时间线上的分片移动现已流畅，消除了之前的卡顿。</span></li>
+      </ul>
+
+      <h3>
+        <span data-lang="en">Bug Fixes</span>
+        <span data-lang="zh">缺陷修复</span>
+      </h3>
+      <ul>
+        <li><span data-lang="en">Fixed <strong>vocal audio playing earlier than MIDI notes</strong> — vocals were starting at the fragment's start position instead of the first note's position within the fragment, causing a visible offset between MIDI notes and audio. All playback / export paths (streaming Play All, non-streaming Play All, fragment editor playback, fragment export, and full-project export) are now aligned with MIDI note positions.</span><span data-lang="zh">修复<strong>歌声比 MIDI 音符更早出现</strong>——歌声此前从分片起点开始播放，而非分片内首个音符的位置，导致 MIDI 音符与音频之间出现明显偏移。所有播放 / 导出路径（流式 Play All、非流式 Play All、分片编辑器播放、分片导出、整项目导出）现均与 MIDI 音符位置对齐。</span></li>
+        <li><span data-lang="en">Fixed <strong>segmented streaming playback incompleteness</strong> — late-arriving chunks were previously scheduled at wrong times, causing playback to end prematurely. A new "waiting for inference" UI now pauses the playhead at the buffer frontier until the next chunk arrives.</span><span data-lang="zh">修复<strong>分段流式播放不完整</strong>——此前延迟到达的 chunk 被错误调度，导致播放提前结束。新增「等待推理」UI 会在缓冲前沿暂停播放头，直到下一个 chunk 到达。</span></li>
+        <li><span data-lang="en">Fixed <strong>comprehensive chunked streaming inference issues</strong> — multiple issues in the chunked streaming inference path are resolved, making streaming preview reliable across fragment boundaries.</span><span data-lang="zh">修复<strong>流式分块推理的多个问题</strong>——流式分块推理路径中的多个问题已解决，流式预览在分片边界处也能可靠工作。</span></li>
+        <li><span data-lang="en">Fixed <strong>playhead jumping back to start after dragging near the end</strong> — dragging the playhead close to the end of a fragment no longer snaps it back to position 0.</span><span data-lang="zh">修复<strong>播放头拖拽到末尾后跳回起点</strong>——将播放头拖到分片末尾附近时不再跳回 0 位置。</span></li>
+        <li><span data-lang="en">Fixed <strong>playhead not animating on streaming chunk arrival</strong> in the fragment editor — the playhead rAF loop is now started when the first streaming chunk arrives, so the canvas redraws and the playhead moves during streaming playback.</span><span data-lang="zh">修复<strong>分片编辑器流式 chunk 到达时播放头不动</strong>——首个流式 chunk 到达时即启动播放头 rAF 循环，流式播放期间画布会重绘、播放头会移动。</span></li>
+        <li><span data-lang="en">Fixed <strong>preprocess playhead sticking to the view on scroll / zoom</strong> — the preprocess playhead no longer follows the viewport on scroll / zoom; scrollbars were added and the minimum zoom was lowered for better navigation.</span><span data-lang="zh">修复<strong>预处理播放头在滚动 / 缩放时跟随视图</strong>——预处理播放头不再在滚动 / 缩放时跟随视口；新增滚动条并降低了最小缩放比例，便于导航。</span></li>
+        <li><span data-lang="en">Fixed <strong>track-level lyrics dropped by @tonejs/midi</strong> — track-level lyrics that were previously lost during MIDI import are now restored.</span><span data-lang="zh">修复<strong>@tonejs/midi 丢弃轨道级歌词</strong>——此前 MIDI 导入时丢失的轨道级歌词现已恢复。</span></li>
+        <li><span data-lang="en">Fixed <strong>FP16 / FP32 input type mismatch</strong> — the inference pipeline now auto-retries with corrected dummy inputs when an FP16 / FP32 input type mismatch is detected, instead of failing the synthesis outright.</span><span data-lang="zh">修复<strong>FP16 / FP32 输入类型不匹配</strong>——推理管道在检测到 FP16 / FP32 输入类型不匹配时会自动用修正后的 dummy inputs 重试，而非直接合成失败。</span></li>
+        <li><span data-lang="en">Fixed <strong>model overview precision race after settings load</strong> — the model status overview now refreshes after settings are loaded, so it correctly reflects the active precision instead of a stale one.</span><span data-lang="zh">修复<strong>设置加载后模型总览精度竞态</strong>——模型状态总览现会在设置加载完成后刷新，正确反映当前生效精度而非过期值。</span></li>
+      </ul>
+
+      <h3>
+        <span data-lang="en">Security</span>
+        <span data-lang="zh">安全</span>
+      </h3>
+      <ul>
+        <li><span data-lang="en"><strong>Scrubbed ModelScope credentials from git history</strong> — any accidentally committed ModelScope credentials were scrubbed from git history, and safeguards were added to prevent future leaks.</span><span data-lang="zh"><strong>清除 git 历史中的 ModelScope 凭据</strong>——已从 git 历史中清除误提交的 ModelScope 凭据，并新增防护以防止未来再次泄漏。</span></li>
+      </ul>
+
+      <h2>
+        <span data-lang="en">v1.0.6</span>
+        <span data-lang="zh">v1.0.6</span>
+      </h2>
+
+      <h3>
+        <span data-lang="en">Bug Fixes</span>
+        <span data-lang="zh">缺陷修复</span>
+      </h3>
+      <ul>
+        <li><span data-lang="en">Fixed <strong>model download percentage overflow</strong> — progress percentages are now clamped to [0, 100] to prevent values exceeding 100% during download.</span><span data-lang="zh">修复<strong>模型下载百分比溢出</strong>——进度百分比现在限制在 [0, 100] 范围内，防止下载过程中超过 100%。</span></li>
+        <li><span data-lang="en">Fixed <strong>inaccurate remote file size detection</strong> — switched from HEAD requests (which return 404 on ModelScope CDN) to <code>Range: bytes=0-0</code> requests that return the correct file size via the <code>Content-Range</code> header.</span><span data-lang="zh">修复<strong>远程文件大小检测不准确</strong>——从 HEAD 请求（在 ModelScope CDN 上返回 404）改为 <code>Range: bytes=0-0</code> 请求，通过 <code>Content-Range</code> 头返回正确的文件大小。</span></li>
+        <li><span data-lang="en">Fixed <strong>file size display anomalies</strong> caused by floating-point precision errors in <code>formatBytes</code> — switched to <code>Math.log2</code> for accurate unit selection.</span><span data-lang="zh">修复 <code>formatBytes</code> 中浮点精度误差导致的<strong>文件大小显示异常</strong>——改用 <code>Math.log2</code> 进行准确的单位选择。</span></li>
+        <li><span data-lang="en">Fixed <strong>SiFiGAN download progress resetting</strong> to 0 for each file — progress is now accumulated across all files in the download batch.</span><span data-lang="zh">修复<strong>SiFiGAN 下载进度每个文件重置为 0</strong>——进度现在在下载批次的所有文件中累计。</span></li>
+      </ul>
+
+      <h2>
+        <span data-lang="en">v1.0.5</span>
+        <span data-lang="zh">v1.0.5</span>
+      </h2>
+
+      <h3>
+        <span data-lang="en">New Features</span>
+        <span data-lang="zh">新功能</span>
+      </h3>
+      <ul>
+        <li><span data-lang="en"><strong>Japanese support (experimental)</strong> — initial experimental support for Japanese vocals, with kanji / kana auto-grouping in the fragment editor and a hybrid phoneme mode that improves Japanese pronunciation on the base multilingual model.</span><span data-lang="zh"><strong>日语支持（实验性）</strong>——首次实验性支持日语人声，分片编辑器中提供汉字 / 假名自动分组，以及混合音素模式在基础多语言模型上改善日语发音。</span></li>
+        <li><span data-lang="en"><strong>Fragment selection &amp; deletion</strong> — fragments on the timeline can be selected with a click; press <kbd class="kbd">Delete</kbd> or use the right-click context menu to remove them.</span><span data-lang="zh"><strong>片段选择与删除</strong>——时间线上的片段可点击选中；按 <kbd class="kbd">Delete</kbd> 或右键菜单可删除。</span></li>
+        <li><span data-lang="en"><strong>ACG default theme &amp; UI overhaul</strong> — comprehensive UI optimization with the ACG theme as the new default.</span><span data-lang="zh"><strong>ACG 默认主题与界面重构</strong>——全面 UI 优化，ACG 主题成为新的默认主题。</span></li>
+        <li><span data-lang="en"><strong>Right-click pitch smoothing control</strong> — right-click a pitch anchor point to tune its smoothing strength individually.</span><span data-lang="zh"><strong>右键音高平滑度控制</strong>——右键点击音高锚点可单独调整其平滑强度。</span></li>
+        <li><span data-lang="en"><strong>Export dialog with precision selection</strong> — a dedicated export dialog lets you pick precision and shows per-file progress.</span><span data-lang="zh"><strong>带精度选择的导出对话框</strong>——专用导出对话框可挑选精度并显示每个文件的进度。</span></li>
+        <li><span data-lang="en"><strong>Singer Creator toolbar Save button</strong> — a dedicated Save button is now available in the Singer Creator toolbar.</span><span data-lang="zh"><strong>歌手创建器工具栏保存按钮</strong>——歌手创建器工具栏新增专用 Save 按钮。</span></li>
+        <li><span data-lang="en"><strong>Window popup animations &amp; timeline scroll swap</strong> — windows now open with a popup animation; the timeline scroll direction was swapped to match user expectations.</span><span data-lang="zh"><strong>窗口弹出动效与时间线滚动方向调整</strong>——窗口打开时增加弹出动效；时间线滚动方向已调整以符合用户预期。</span></li>
+        <li><span data-lang="en"><strong>Per-precision model version tracking</strong> — each precision (FP32 / FP16 / INT8 / INT8-NPU) now has its own version metadata; switching precisions no longer invalidates unrelated cache entries.</span><span data-lang="zh"><strong>按精度模型版本追踪</strong>——每种精度（FP32 / FP16 / INT8 / INT8-NPU）现在拥有独立的版本元数据；切换精度不再使无关缓存条目失效。</span></li>
+        <li><span data-lang="en"><strong>In-app update checker for app &amp; models</strong> — a new <strong>Update</strong> section in Settings checks both the application build (via GitHub Releases, selectable <em>nightly</em> / <em>release</em> channel) and installed models (main / JP / SiFiGAN) for new versions. On startup it auto-checks at most once every 24h and, when an update is found, pops a dedicated notification window with <em>Update now</em> (opens the installer / model download), <em>Skip this version</em>, and <em>Don't remind me</em> actions; a manual <em>Check now</em> button is also available.</span><span data-lang="zh"><strong>应用与模型应用内更新检查</strong>——设置页新增「更新」分区，同时检查应用本体（通过 GitHub Releases，可选 <em>nightly</em> / <em>release</em> 频道）与已安装模型（main / JP / SiFiGAN）的新版本。启动时每 24 小时至多自动检查一次，发现更新时弹出专用提示窗口，提供「立即更新」（打开安装包 / 模型下载）、「跳过本次更新」、「不再提醒」操作；同时提供手动「立即检查更新」按钮。</span></li>
+        <li><span data-lang="en"><strong>Animated custom checkboxes</strong> — native checkboxes are replaced with animated custom checkboxes across settings dialogs.</span><span data-lang="zh"><strong>动画自定义复选框</strong>——设置对话框中的原生复选框已替换为带动画的自定义复选框。</span></li>
+        <li><span data-lang="en"><strong>Kanji / kana auto-grouping in fragment editor</strong> — when a fragment already contains Japanese kana, any kanji in the same fragment is automatically treated as Japanese and split into ordered kana notes. A connecting bracket with the kanji label is drawn above the group. Right-click the bracket, label, or any kana in the group to toggle the whole group between Chinese (single kanji note) and Japanese (kana group). Kana notes can be moved in pitch and time, but cannot be deleted individually — deleting any kana removes the entire group. New notes cannot be inserted inside a group's time span.</span><span data-lang="zh"><strong>分片编辑器汉字 / 假名自动分组</strong>——当分片中已存在日语假名时，同一分片内的所有汉字会被自动识别为日语并按顺序切分为假名音符。分组上方绘制带汉字标签的连接线。右键点击连接线、标签或分组内任一假名，可将整个分组在中文（单个汉字音符）与日语（假名分组）之间切换。假名音符允许音高与时间移动，但不允许单独删除——删除任一假名即删除整个分组。分组时间范围内也不允许插入新音符。</span></li>
+        <li><span data-lang="en"><strong>Hybrid Japanese phoneme mode</strong> — a new <strong>Hybrid Phonemes</strong> option in Settings → Japanese Vocalization improves Japanese pronunciation on the base multilingual model: ら-row uses ARPAbet L (acoustically closer to the Japanese tap /ɾ/ than R /ɹ/), お-column uses AO (a pure vowel, not the OW diphthong /oʊ/). No extra model download required; fully compatible with the per-note phoneme boundary editor.</span><span data-lang="zh"><strong>混合日语音素模式</strong>——设置 → 日语发声方式中新增 <strong>混合音素</strong> 选项，在基础多语言模型上改进日语发音：ら行使用 ARPAbet L（比 R /ɹ/ 更接近日语弹音 /ɾ/），お段使用 AO（纯元音，非双元音 OW /oʊ/）。无需额外下载模型；完全兼容逐音符音素边界编辑器。</span></li>
+        <li><span data-lang="en"><strong>Bilingual documentation website</strong> — the official website now ships bilingual EN / 中文 docs with automatic language switching.</span><span data-lang="zh"><strong>双语文档官网</strong>——官网现提供 EN / 中文 双语文档，支持自动语言切换。</span></li>
+      </ul>
+
+      <h3>
+        <span data-lang="en">Bug Fixes</span>
+        <span data-lang="zh">缺陷修复</span>
+      </h3>
+      <ul>
+        <li><span data-lang="en">Fixed the pitch-brush <strong>Smoothing slider</strong> having no effect; pitch curves now respect the slider value.</span><span data-lang="zh">修复了画笔<strong>平滑滑块</strong>无效的问题；音高曲线现在会按滑块值平滑。</span></li>
+        <li><span data-lang="en">Fixed <strong>missing modules in the packaged build</strong>.</span><span data-lang="zh">修复了<strong>打包构建缺失模块</strong>的问题。</span></li>
+        <li><span data-lang="en">Fixed <strong>lyrics entered inline not refreshing</strong> the note display until the next click.</span><span data-lang="zh">修复了<strong>内联输入的歌词不刷新</strong>音符显示（直到下次点击才刷新）的问题。</span></li>
+        <li><span data-lang="en">Fixed the <strong>Singer Creator preview playhead drifting</strong> out of sync with audible audio playback.</span><span data-lang="zh">修复了<strong>歌手创建器预览游标与音频播放不同步</strong>（漂移）的问题。</span></li>
+        <li><span data-lang="en">Fixed the <strong>synthesis cache not invalidating on singer switch</strong> by including <code>singerId</code> in the cache key.</span><span data-lang="zh">修复了<strong>切换歌手时合成缓存未失效</strong>的问题——将 <code>singerId</code> 加入缓存键。</span></li>
+        <li><span data-lang="en">Added <strong>fallback paths and debug logging for <code>phone_set.json</code></strong> loading.</span><span data-lang="zh">为 <code>phone_set.json</code> 加载新增<strong>回退路径与调试日志</strong>。</span></li>
+      </ul>
+
+      <nav class="doc-pager">
+        <a href="settings.html">
+          <div class="pager-card">
+            <div class="pager-label" data-i18n="pager.prev">Previous</div>
+            <div class="pager-title"><span data-lang="en">Settings</span><span data-lang="zh">设置</span></div>
+          </div>
+        </a>
+        <a href="model-updates.html" class="next">
+          <div class="pager-card">
+            <div class="pager-label" data-i18n="pager.next">Next</div>
+            <div class="pager-title"><span data-lang="en">Model Updates</span><span data-lang="zh">模型更新</span></div>
+          </div>
+        </a>
+      </nav>
+    </main>
+
+    <aside class="docs-toc scrollbar-thin">
+      <div class="toc-title" data-i18n="toc.title">On this page</div>
+      <div data-toc></div>
+    </aside>
+  </div>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-links">
+        <a href="../index.html" data-i18n="footer.docs">Documentation</a>
+        <a href="faq.html" data-i18n="footer.help">Help &amp; FAQ</a>
+        <a href="https://github.com/Henley04/SXSEditor" target="_blank" rel="noopener" data-i18n="footer.github">GitHub Repository</a>
+        <a href="https://gitcode.com/qq_50331623/SXSEditor" target="_blank" rel="noopener" data-i18n="footer.gitcode">GitCode Mirror</a>
+        <a href="https://github.com/Henley04/SXSEditor/issues" target="_blank" rel="noopener" data-i18n="footer.issues">Issue Tracker</a>
+      </div>
+      <div class="footer-copy" data-i18n="footer.copy">© 2026 SXSEditor. MIT License.</div>
+    </div>
+  </footer>
+
+  <button class="back-to-top" data-back-to-top type="button" aria-label="Back to top">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 15l-6-6-6 6"/></svg>
+  </button>
+
+  <script src="../js/i18n.js"></script>
+  <script src="../js/docs-nav.js"></script>
+  <script src="../js/layout.js"></script>
+</body>
+</html>

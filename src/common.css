@@ -1,0 +1,260 @@
+/* ==================== 共享组件样式 ==================== */
+@import './components.css';
+@import './icons/icons.css';
+
+/* ==================== CSS 重置和基础样式 ==================== */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-app);
+  color: var(--fg-secondary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  animation: window-enter 0.22s var(--ease-emphasized);
+  transform-origin: center center;
+}
+
+/* ==================== 滚动条样式 ==================== */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-sm);
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* ==================== 选区颜色 ==================== */
+::selection {
+  background: var(--selection-bg);
+  color: var(--selection-fg);
+}
+
+/* ==================== 全局按钮基础样式与动效 ==================== */
+button {
+  padding: var(--space-4) var(--space-7);
+  font-size: var(--font-md);
+  border: none;
+  border-radius: var(--radius-lg);
+  clip-path: var(--clip-button, none);
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color var(--motion-base) var(--ease-standard),
+              border-color var(--motion-base) var(--ease-standard),
+              color var(--motion-base) var(--ease-standard),
+              transform var(--motion-base) var(--ease-bounce),
+              box-shadow var(--motion-base) var(--ease-standard);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  position: relative;
+  overflow: hidden;
+  /* Button press effect */
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+  transition-duration: 0.06s;
+  transition-timing-function: var(--ease-standard);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* ==================== section-title 样式 ==================== */
+.section-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--accent-fg);
+  margin: 0 0 14px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.section-title::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  background: linear-gradient(180deg, var(--accent-hover), var(--accent));
+  border-radius: var(--radius-sm);
+}
+
+/* ==================== h2 标题样式 ==================== */
+h2 {
+  margin: 0 0 var(--space-7) 0;
+  font-size: var(--font-2xl);
+  font-weight: 600;
+  color: var(--accent);
+  border-bottom: 2px solid var(--accent-soft);
+  padding-bottom: var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+h2::before {
+  content: '';
+  width: 4px;
+  height: 22px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-pressed));
+  border-radius: var(--radius-sm);
+}
+
+/* ==================== .section-desc 样式 ==================== */
+.section-desc {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  margin: -8px 0 14px 0;
+  line-height: 1.5;
+  padding-left: 11px;
+  border-left: 2px solid var(--ink-soft);
+}
+
+/* ==================== 全局交互增强 ==================== */
+
+/* Focus ring on all interactive elements */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Smooth transitions on interactive inputs */
+input,
+select,
+textarea {
+  transition: border-color var(--motion-fast) var(--ease-standard),
+              box-shadow var(--motion-fast) var(--ease-standard),
+              background var(--motion-fast) var(--ease-standard);
+}
+
+/* ==================== 自定义复选框（带动画） ==================== */
+/* 替换原生 checkbox 外观，统一所有页面的复选框样式 */
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-input);
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  vertical-align: middle;
+  transition:
+    background var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard),
+    transform 0.12s var(--ease-standard);
+}
+
+/* 对勾：用伪元素绘制，通过 scale 做弹跳动画 */
+input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--fg-on-accent);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  opacity: 0;
+  transition:
+    transform var(--motion-base) var(--ease-bounce),
+    opacity var(--motion-fast) var(--ease-standard);
+}
+
+input[type="checkbox"]:hover:not(:disabled):not(:checked) {
+  border-color: var(--accent);
+  background: var(--accent-softer);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input[type="checkbox"]:active:not(:disabled) {
+  transform: scale(0.88);
+}
+
+input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 1px 4px var(--accent-glow, var(--accent-soft));
+}
+
+input[type="checkbox"]:checked::after {
+  transform: rotate(45deg) scale(1);
+  opacity: 1;
+}
+
+input[type="checkbox"]:checked:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 兼容已有容器：保留 accent-color 回退（appearance:none 下无效，仅作向后兼容） */
+
+/* Card-like panels get subtle hover lift */
+[class$="-panel"]:not(.modal-overlay):not(.loading-overlay) {
+  transition: box-shadow var(--motion-base) var(--ease-standard);
+}
+
+/* Selection/active states get accent glow */
+::selection {
+  background: var(--selection-bg);
+  color: var(--selection-fg);
+}
+
+/* ==================== Reduced Motion Support ==================== */
+/* Respect user OS-level preference for reduced motion. Disables non-essential
+   animations while keeping functional transitions (e.g. dialog enter/exit). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

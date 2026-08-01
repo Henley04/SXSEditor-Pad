@@ -1,0 +1,514 @@
+body {
+    background: var(--bg-app);
+    color: var(--fg-secondary);
+    min-height: 100vh;
+    overflow-y: auto;
+}
+
+.rm-container {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: var(--space-8) 28px;
+    min-height: 100vh;
+}
+
+/* ===== Sections ===== */
+
+.rm-section {
+    margin-bottom: var(--space-6);
+    padding: var(--space-6) 18px;
+    background: var(--bg-panel);
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border-default);
+    transition: border-color var(--motion-base), box-shadow var(--motion-base);
+}
+
+.rm-section:hover {
+    border-color: var(--accent-glow);
+    box-shadow: 0 4px 16px var(--accent-softer);
+}
+
+/* ===== Loading ===== */
+
+.loading-hint {
+    font-size: var(--font-base);
+    color: var(--fg-disabled);
+    text-align: center;
+    padding: var(--space-5) 0;
+}
+
+/* ===== GPU Info ===== */
+
+.gpu-info-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+}
+
+.gpu-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    padding: 14px var(--space-6);
+    transition: border-color var(--motion-base);
+}
+
+.gpu-card:hover {
+    border-color: var(--accent-line);
+}
+
+.gpu-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.gpu-name {
+    font-size: var(--font-md);
+    font-weight: 600;
+    color: var(--fg-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 1;
+    margin-right: var(--space-4);
+}
+
+.gpu-badges {
+    display: flex;
+    gap: var(--space-3);
+    flex-shrink: 0;
+}
+
+.gpu-badge {
+    font-size: var(--font-xs);
+    font-weight: 600;
+    padding: var(--space-1) var(--space-4);
+    border-radius: var(--radius-xl);
+    letter-spacing: 0.3px;
+}
+
+.gpu-badge.discrete {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.gpu-badge.integrated {
+    background: var(--warning-soft);
+    color: var(--warning);
+}
+
+.gpu-badge.vendor {
+    background: var(--success-soft);
+    color: var(--success);
+}
+
+.vram-bar-container {
+    margin-top: var(--space-2);
+}
+
+.vram-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: var(--font-sm);
+    color: var(--fg-muted);
+    margin-bottom: var(--space-3);
+}
+
+.vram-label .vram-used {
+    color: var(--success);
+    font-weight: 600;
+}
+
+.vram-label .vram-total {
+    color: var(--fg-disabled);
+}
+
+.vram-bar {
+    width: 100%;
+    height: var(--space-4);
+    background: var(--bg-app);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    position: relative;
+}
+
+.vram-bar-fill {
+    height: 100%;
+    border-radius: var(--radius-md);
+    background: linear-gradient(90deg, var(--color-green-600), var(--success));
+    transition: width 0.5s ease;
+    min-width: 0;
+}
+
+.vram-bar-fill.warning {
+    background: linear-gradient(90deg, var(--color-amber-400), var(--warning));
+}
+
+.vram-bar-fill.critical {
+    background: linear-gradient(90deg, var(--color-red-500), var(--danger));
+}
+
+.gpu-no-data {
+    font-size: var(--font-base);
+    color: var(--fg-disabled);
+    text-align: center;
+    padding: var(--space-4) 0;
+}
+
+/* ===== Model Groups ===== */
+
+.model-groups-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.model-group {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    transition: border-color var(--motion-base);
+}
+
+.model-group:hover {
+    border-color: var(--accent-line);
+}
+
+.model-group-header {
+    display: flex;
+    align-items: center;
+    padding: var(--space-5) 14px;
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--motion-fast);
+    gap: 10px;
+}
+
+.model-group-header:hover {
+    background: var(--accent-softer);
+}
+
+.group-arrow {
+    font-size: var(--font-xs);
+    color: var(--accent-hover);
+    transition: transform var(--motion-base) ease;
+    flex-shrink: 0;
+    width: 14px;
+    text-align: center;
+}
+
+.group-arrow.expanded {
+    transform: rotate(90deg);
+}
+
+.group-name {
+    font-size: var(--font-md);
+    font-weight: 600;
+    color: var(--fg-secondary);
+    flex: 1;
+}
+
+.group-loaded-badge {
+    font-size: var(--font-xs);
+    font-weight: 600;
+    padding: var(--space-1) var(--space-4);
+    border-radius: var(--radius-xl);
+    background: var(--accent-soft);
+    color: var(--accent);
+    flex-shrink: 0;
+}
+
+.group-loaded-badge.all-loaded {
+    background: var(--success-soft);
+    color: var(--success);
+}
+
+.group-loaded-badge.none-loaded {
+    background: var(--ink-soft);
+    color: var(--fg-disabled);
+}
+
+.group-actions {
+    display: flex;
+    gap: var(--space-3);
+    flex-shrink: 0;
+}
+
+.group-action-btn {
+    font-size: var(--font-xs);
+    padding: 3px 10px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all var(--motion-fast);
+    color: var(--fg-muted);
+}
+
+.group-action-btn.load-all {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.group-action-btn.load-all:hover {
+    background: var(--accent-glow);
+}
+
+.group-action-btn.unload-all {
+    background: var(--danger-soft);
+    color: var(--danger);
+}
+
+.group-action-btn.unload-all:hover {
+    background: var(--danger-glow);
+}
+
+.group-action-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.model-group-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height var(--motion-slow) ease;
+}
+
+.model-group-body.expanded {
+    /* max-height 由 JS 动态设置 */
+}
+
+.model-list {
+    padding: 0 14px var(--space-5) 14px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.model-item {
+    display: flex;
+    align-items: center;
+    padding: 10px var(--space-5);
+    background: var(--bg-app);
+    border-radius: 6px;
+    border: 1px solid var(--panel-line);
+    gap: 10px;
+    transition: border-color var(--motion-fast);
+}
+
+.model-item:hover {
+    border-color: var(--accent-soft);
+}
+
+.model-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.model-name {
+    font-size: var(--font-base);
+    font-weight: 600;
+    color: var(--fg-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.model-desc {
+    font-size: var(--font-xs);
+    color: var(--fg-disabled);
+    margin-top: var(--space-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.model-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    flex-shrink: 0;
+}
+
+.model-size {
+    font-size: var(--font-xs);
+    color: var(--fg-disabled);
+    white-space: nowrap;
+}
+
+.ep-badge {
+    font-size: 9px;
+    font-weight: 700;
+    padding: var(--space-1) 7px;
+    border-radius: var(--radius-md);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.ep-badge.dml {
+    background: var(--success-soft);
+    color: var(--success);
+}
+
+.ep-badge.cpu {
+    background: var(--warning-soft);
+    color: var(--warning);
+}
+
+.ep-badge.tfjs {
+    background: var(--purple-soft);
+    color: var(--color-purple-400);
+}
+
+.ep-badge.none {
+    background: var(--ink-soft);
+    color: var(--fg-disabled);
+}
+
+.model-btn {
+    font-size: var(--font-xs);
+    padding: var(--space-2) var(--space-5);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all var(--motion-fast);
+    white-space: nowrap;
+}
+
+.model-btn.load {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.model-btn.load:hover {
+    background: var(--accent-glow);
+}
+
+.model-btn.unload {
+    background: var(--danger-soft);
+    color: var(--danger);
+}
+
+.model-btn.unload:hover {
+    background: var(--danger-glow);
+}
+
+.model-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.model-btn.loading,
+.group-action-btn.loading {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+.model-missing {
+    font-size: var(--font-xs);
+    color: var(--danger);
+    padding: var(--space-1) 7px;
+    background: var(--danger-soft);
+    border-radius: var(--radius-md);
+}
+
+/* ===== Summary ===== */
+
+.summary-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+}
+
+.summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-4) var(--space-5);
+    background: var(--bg-elevated);
+    border-radius: 6px;
+    border: 1px solid var(--panel-line);
+}
+
+.summary-label {
+    font-size: var(--font-base);
+    color: var(--fg-muted);
+}
+
+.summary-value {
+    font-size: var(--font-base);
+    font-weight: 600;
+    color: var(--fg-secondary);
+}
+
+.summary-value.accent {
+    color: var(--accent);
+}
+
+.summary-value.green {
+    color: var(--success);
+}
+
+/* ===== Actions ===== */
+
+.rm-actions {
+    display: flex;
+    gap: var(--space-5);
+    justify-content: flex-end;
+    margin-top: var(--space-7);
+    padding-top: var(--space-6);
+    border-top: 1px solid var(--border-default);
+    align-items: center;
+}
+
+#refreshBtn {
+    background: var(--bg-button-primary);
+    color: var(--fg-on-accent);
+}
+
+#refreshBtn:hover {
+    background: var(--bg-button-primary-hover);
+}
+
+#refreshBtn:active {
+    background: var(--bg-button-primary-hover);
+}
+
+/* ===== Responsive ===== */
+
+@media (max-width: 640px) {
+    .rm-container {
+        padding: var(--space-6);
+    }
+
+    .rm-section {
+        padding: 14px;
+    }
+
+    h2 {
+        font-size: var(--font-xl);
+    }
+
+    .model-item {
+        flex-wrap: wrap;
+    }
+
+    .model-meta {
+        width: 100%;
+        justify-content: flex-end;
+        margin-top: var(--space-2);
+    }
+
+    .rm-actions {
+        flex-direction: column-reverse;
+    }
+
+    button {
+        width: 100%;
+        justify-content: center;
+    }
+}

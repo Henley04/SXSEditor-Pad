@@ -1,0 +1,14 @@
+node_modules/
+dist/
+src-tauri/target/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+onnx_models/
+pretrained_models/
+pretrained_models_fp16/
+calibrate/data/
+test/output/
+.env
+.env.local

@@ -1,0 +1,193 @@
+# -*- coding: utf-8 -*-
+"""复用已提取的数据快速重训 MLP（跳过 60 分钟数据提取阶段）。
+
+优化点（v2）:
+  - EPOCHS 200 -> 600（原版 200 epoch 仍未收敛，loss 持续下降）
+  - 调度器 ReduceLROnPlateau -> CosineAnnealingLR（原版 LR 一直 5e-4 未衰减，
+    余弦退火让 LR 从 5e-4 平滑下降到 1e-6，后期更精细优化）
+  - PATIENCE 20 -> 40（配合更长训练周期，避免过早停止）
+  - 加梯度裁剪 clip_grad_norm_=1.0（防爆炸）
+
+用法:
+  python scripts/retrain_mlp_from_data.py
+"""
+import os
+import sys
+import numpy as np
+import torch
+import torch.nn as nn
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+from train_mel_proj_mlp import (
+    MelProjMLP, SVS_NUM_MELS, TOTAL_DIM, HIDDEN_DIM, DROPOUT,
+    BATCH_FRAMES, WEIGHT_DECAY,
+    OUTPUT_DIR, MLP_WEIGHT_PATH, MLP_LOG_PATH,
+)
+
+# ===================== 优化后的训练超参数 =====================
+EPOCHS = 600
+LR = 5e-4
+PATIENCE = 40
+MIN_DELTA = 5e-6
+GRAD_CLIP = 1.0
+ETA_MIN = 1e-6  # CosineAnnealingLR 的最小学习率
+
+
+def main():
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Device: {device}")
+
+    # 加载已提取的数据
+    mel_path = os.path.join(OUTPUT_DIR, "mlp_mel_data.npy")
+    target_path = os.path.join(OUTPUT_DIR, "mlp_target_data.npy")
+    print(f"\n[1] Loading existing data...")
+    mel_data = np.load(mel_path)
+    target_data = np.load(target_path)
+    print(f"    mel: {mel_data.shape}, target: {target_data.shape}")
+
+    # 过滤 NaN/Inf
+    valid_mask = np.isfinite(mel_data).all(axis=1) & np.isfinite(target_data).all(axis=1)
+    if not valid_mask.all():
+        n_invalid = (~valid_mask).sum()
+        print(f"    [WARN] 过滤 {n_invalid} 个含 NaN/Inf 的帧")
+        mel_data = mel_data[valid_mask]
+        target_data = target_data[valid_mask]
+    print(f"    After filter: mel={mel_data.shape}, target={target_data.shape}")
+
+    # 数据统计
+    print(f"\n[2] Data stats:")
+    print(f"    SVS mel: mean={mel_data.mean():.4f}, std={mel_data.std():.4f}")
+    print(f"    target mcep(0:40): mean={target_data[:, :40].mean():.4f}, "
+          f"std={target_data[:, :40].std():.4f}")
+
+    # 训练
+    print(f"\n[3] Training MelProjMLP (residual)...")
+    mel_t = torch.from_numpy(mel_data).float().to(device)
+    target_t = torch.from_numpy(target_data).float().to(device)
+
+    model = MelProjMLP().to(device)
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"    Parameters: {n_params} ({n_params/1e3:.1f}K)")
+
+    # 最小二乘初始化线性主干
+    print(f"    Initializing linear backbone with least-squares...")
+    with torch.no_grad():
+        X = mel_t
+        Y = target_t
+        XtX = X.t() @ X + 1e-4 * torch.eye(SVS_NUM_MELS, device=device)
+        XtY = X.t() @ Y
+        W_init = torch.linalg.solve(XtX, XtY)
+        model.linear.weight.copy_(W_init.t())
+
+    model.eval()
+    with torch.no_grad():
+        pred_init = model(mel_t)
+        loss_init = nn.functional.l1_loss(pred_init, target_t).item()
+    print(f"    Init L1 loss: {loss_init:.6f}")
+    model.train()
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    # 余弦退火：LR 从 5e-4 平滑衰减到 1e-6，比 ReduceLROnPlateau 更稳定
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=EPOCHS, eta_min=ETA_MIN
+    )
+
+    N = mel_t.shape[0]
+    best_loss = float("inf")
+    best_state = None
+    no_improve = 0
+    log_lines = []
+
+    # 分批验证避免大数据 OOM（全量前向会同时占用 mel+target+pred 显存）
+    EVAL_BATCH = 65536
+    def evaluate():
+        """分批计算全量 L1/mcep_l1/in_range，避免一次性前向 OOM。"""
+        model.eval()
+        total_loss = 0.0
+        total_mcep_l1 = 0.0
+        total_in_range = 0.0
+        n_chunks = 0
+        with torch.no_grad():
+            for start in range(0, N, EVAL_BATCH):
+                end = min(start + EVAL_BATCH, N)
+                pred_chunk = model(mel_t[start:end])
+                target_chunk = target_t[start:end]
+                total_loss += nn.functional.l1_loss(pred_chunk, target_chunk).item()
+                total_mcep_l1 += nn.functional.l1_loss(pred_chunk[:, :40], target_chunk[:, :40]).item()
+                total_in_range += torch.mean((torch.abs(pred_chunk[:, :40]) <= 5).float()).item()
+                n_chunks += 1
+        model.train()
+        return total_loss / n_chunks, total_mcep_l1 / n_chunks, total_in_range / n_chunks
+
+    for epoch in range(EPOCHS):
+        model.train()
+        perm = torch.randperm(N, device=device)
+        epoch_loss = 0.0
+        n_batches = 0
+        for start in range(0, N, BATCH_FRAMES):
+            end = min(start + BATCH_FRAMES, N)
+            idx = perm[start:end]
+            x_batch = mel_t[idx]
+            y_batch = target_t[idx]
+            pred = model(x_batch)
+            loss = nn.functional.l1_loss(pred, y_batch)
+            optimizer.zero_grad()
+            loss.backward()
+            # 梯度裁剪防爆炸
+            if GRAD_CLIP > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), GRAD_CLIP)
+            optimizer.step()
+            epoch_loss += loss.item()
+            n_batches += 1
+
+        avg_loss = epoch_loss / n_batches
+        # CosineAnnealingLR 每个 epoch step（不传 loss，按周期退火）
+        scheduler.step()
+
+        full_loss, mcep_l1, in_range = evaluate()
+
+        log_line = f"Epoch {epoch+1:3d}/{EPOCHS}: loss={avg_loss:.6f}, full={full_loss:.6f}, mcep_l1={mcep_l1:.4f}, in_range={in_range*100:.1f}%, lr={optimizer.param_groups[0]['lr']:.2e}"
+        log_lines.append(log_line)
+        # 600 epoch 太多，每 20 epoch 打印一次（首尾额外打印）
+        if (epoch + 1) % 20 == 0 or epoch == 0 or (epoch + 1) == EPOCHS:
+            print(f"    {log_line}")
+
+        if full_loss < best_loss - MIN_DELTA:
+            best_loss = full_loss
+            best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            no_improve = 0
+        else:
+            no_improve += 1
+            if no_improve >= PATIENCE:
+                print(f"    Early stop at epoch {epoch+1}, best_loss={best_loss:.6f}")
+                break
+
+    if best_state is not None:
+        model.load_state_dict(best_state)
+
+    torch.save({
+        "state_dict": model.state_dict(),
+        "config": {
+            "in_dim": SVS_NUM_MELS, "hidden_dim": HIDDEN_DIM,
+            "out_dim": TOTAL_DIM, "dropout": DROPOUT,
+        },
+        "best_loss": best_loss,
+    }, MLP_WEIGHT_PATH)
+    print(f"\n[4] Saved MLP weight: {MLP_WEIGHT_PATH}")
+
+    model.eval()
+    loss, mcep_l1, in_range = evaluate()
+    print(f"\n[5] Final validation:")
+    print(f"    L1 loss: {loss:.6f}")
+    print(f"    mcep L1 (normalized): {mcep_l1:.4f}")
+    print(f"    mcep in [-5, 5]: {in_range*100:.1f}%")
+
+    with open(MLP_LOG_PATH, "w", encoding="utf-8") as f:
+        f.write("\n".join(log_lines))
+    print(f"    Train log: {MLP_LOG_PATH}")
+    print(f"\n[6] Done. Next: python scripts/export_sifigan_with_mlp.py")
+
+
+if __name__ == "__main__":
+    main()

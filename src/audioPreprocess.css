@@ -1,0 +1,287 @@
+html, body {
+  background-color: var(--bg-app);
+  color: var(--fg-primary);
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+/* ==================== 工具栏 ==================== */
+#toolbar {
+  display: flex;
+  align-items: center;
+  height: 40px;
+  min-height: 40px;
+  padding: 0 var(--space-5);
+  background: linear-gradient(180deg, var(--bg-toolbar-start) 0%, var(--bg-toolbar-end) 100%);
+  color: var(--fg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--space-1);
+  box-shadow: 0 1px 3px var(--shadow-color-mid);
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 22px;
+  background: linear-gradient(180deg, transparent, var(--button-secondary-border), transparent);
+  margin: 0 var(--space-3);
+  flex-shrink: 0;
+}
+
+.btn-toolbar {
+  background: var(--bg-button);
+  color: var(--fg-muted);
+  border: 1px solid var(--button-secondary-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) 10px;
+  cursor: pointer;
+  font-size: var(--font-base);
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              border-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard),
+              transform var(--motion-fast) var(--ease-standard);
+  white-space: nowrap;
+}
+
+.btn-toolbar:hover {
+  background: var(--bg-button-hover);
+  color: var(--fg-primary);
+  border-color: var(--accent-glow);
+  transform: translateY(-1px);
+}
+
+.btn-toolbar:active {
+  background: var(--bg-button-active);
+  transform: translateY(0) scale(0.97);
+  transition-duration: 0.06s;
+  transition-timing-function: var(--ease-standard);
+}
+
+.btn-toolbar:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-toolbar.btn-primary {
+  background: var(--bg-button-primary);
+  border-color: var(--accent-hover);
+  color: var(--fg-on-accent);
+}
+
+.btn-toolbar.btn-primary:hover {
+  background: var(--bg-button-primary-hover);
+}
+
+.btn-toolbar.btn-success {
+  background: var(--bg-button-success);
+  border-color: var(--color-green-300);
+  color: var(--fg-on-success);
+  font-weight: 600;
+}
+
+.btn-toolbar.btn-success:hover {
+  background: var(--bg-button-success-hover);
+}
+
+#page-title {
+  font-size: var(--font-md);
+  font-weight: 500;
+  color: var(--fg-secondary);
+}
+
+/* ==================== 主内容区 ==================== */
+#main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ==================== 波形区域 ==================== */
+#waveform-section {
+  flex: 0 0 25%;
+  min-height: 120px;
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+}
+
+#resize-handle {
+  height: 4px;
+  background: var(--bg-header-start);
+  cursor: ns-resize;
+  flex-shrink: 0;
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              transform var(--motion-fast) var(--ease-bounce);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+#resize-handle:hover,
+#resize-handle.dragging {
+  background: var(--accent);
+  transform: scaleY(1.6);
+}
+
+#midi-section {
+  flex: 1;
+  background: var(--bg-app);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* midi-body: 容纳 midi-container + 垂直滚动条的水平布局行 */
+#midi-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+#waveform-header,
+#midi-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-5);
+  background: linear-gradient(180deg, var(--bg-header-start) 0%, var(--bg-header-end) 100%);
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 30px;
+}
+
+.section-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.file-info {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+#waveform-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+#waveform-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#midi-container {
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+}
+
+#midi-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ==================== 滚动条 ==================== */
+/* 底部水平滚动条 + 右侧垂直滚动条，允许用户用鼠标拖拽滑块调整视图位置。
+   滑块位置和大小由 canvasRenderer.updateScrollbars() 根据当前 scrollX/scrollY/zoomX 计算。 */
+.scrollbar {
+  background: var(--scrollbar-track, transparent);
+  flex-shrink: 0;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.scrollbar-horizontal {
+  height: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.scrollbar-vertical {
+  width: 12px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.scrollbar-thumb {
+  position: absolute;
+  background: var(--scrollbar-thumb, rgba(120, 120, 140, 0.5));
+  border-radius: 3px;
+  cursor: grab;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+  box-sizing: border-box;
+}
+
+.scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, rgba(120, 120, 140, 0.8));
+}
+
+.scrollbar-thumb:active {
+  cursor: grabbing;
+  background: var(--scrollbar-thumb-hover, rgba(120, 120, 140, 0.8));
+}
+
+#midi-hscroll .scrollbar-thumb {
+  top: 2px;
+  height: 8px;
+  min-width: 24px;
+}
+
+#midi-vscroll .scrollbar-thumb {
+  left: 2px;
+  width: 8px;
+  min-height: 24px;
+}
+
+/* ==================== 加载遮罩 ==================== */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(10, 10, 20, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.loading-content {
+  background: linear-gradient(180deg, var(--bg-header-start) 0%, var(--bg-header-end) 100%);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-2xl);
+  padding: var(--space-8) 36px;
+  text-align: center;
+  box-shadow: 0 12px 40px var(--shadow-color-strong);
+}
+
+.loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--accent-line);
+  border-top: 3px solid var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 14px;
+}
+
+.loading-text {
+  font-size: var(--font-md);
+  color: var(--fg-secondary);
+  font-weight: 500;
+}

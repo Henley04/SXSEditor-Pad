@@ -1,0 +1,265 @@
+/* ============================================
+   SXSEditor-Pad - Touch-friendly Pad styles
+   Mobile-first responsive design for tablets
+   ============================================ */
+
+/* Base touch-friendly adjustments */
+:root {
+  --touch-target-min: 44px;
+  --touch-target-min-w: 48px;
+  --safe-area-inset: env(safe-area-inset-bottom, 0px);
+}
+
+/* Ensure minimum touch target sizes for all interactive elements */
+button,
+.btn-toolbar,
+.toolbar-group button,
+input[type="checkbox"] + label,
+input[type="radio"] + label,
+select,
+.sidebar-item,
+.theme-actions button {
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min-w);
+}
+
+/* Prevent text selection on touch devices */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+/* Allow text selection in input fields */
+input, textarea, select, [contenteditable] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Toolbar - adapt for touch */
+#toolbar {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: none;
+  touch-action: pan-x;
+}
+
+.toolbar-group button {
+  padding: 8px 14px;
+  font-size: 14px;
+  border-radius: 8px;
+  margin: 2px 4px;
+}
+
+/* Responsive toolbar */
+@media (max-width: 900px) {
+  #toolbar {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .toolbar-group {
+    flex-wrap: wrap;
+  }
+  .toolbar-divider {
+    display: none;
+  }
+}
+
+/* Slider/range inputs - larger track for touch */
+input[type="range"] {
+  height: 8px;
+  min-height: 8px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+/* Main content area */
+#main-content {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Singer panel */
+#singer-panel {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+#singer-list {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Fragment timeline */
+#fragment-timeline {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Canvas elements - enable touch interactions */
+canvas {
+  touch-action: none;
+}
+
+/* Settings page touch optimization */
+.settings-layout {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.settings-sidebar {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Model download page */
+.header {
+  padding: 16px;
+}
+
+/* Splash screen */
+#splash-root {
+  touch-action: none;
+}
+
+/* Sidebar navigation */
+.sidebar-nav {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Theme editor modal */
+.theme-editor-panel {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Scrollbar styling for touch */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+/* Fix for 100vh on mobile (addresses URL bar issue) */
+html, body {
+  height: 100%;
+  height: -webkit-fill-available;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+  height: -webkit-fill-available;
+}
+
+/* Fragment editor */
+.fragment-editor-container {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Audio preprocess */
+.audio-preprocess-container {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Singer creator */
+.singer-creator-container {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Singer market */
+.singer-market-container {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Resource manager */
+.rm-container {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Dialogs and modals */
+.dialog-overlay {
+  touch-action: none;
+}
+
+.dialog-content {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Toast notifications */
+.theme-toast {
+  touch-action: none;
+}
+
+/* Input focus styles for touch */
+input:focus, select:focus, textarea:focus, button:focus {
+  outline: none;
+}
+
+/* Large checkbox/radio targets */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  margin: 8px;
+}
+
+/* Select dropdowns */
+select {
+  padding: 8px 32px 8px 12px;
+  font-size: 14px;
+  border-radius: 8px;
+  background-size: 16px;
+}
+
+/* Number inputs */
+input[type="number"] {
+  padding: 8px;
+  font-size: 14px;
+  border-radius: 6px;
+  min-height: 36px;
+}
+
+/* Text inputs */
+input[type="text"] {
+  padding: 8px 12px;
+  font-size: 14px;
+  border-radius: 6px;
+  min-height: 36px;
+}
+
+/* Button hover states - only show on devices that support hover */
+@media (hover: hover) {
+  button:hover,
+  .btn-toolbar:hover,
+  .sidebar-item:hover {
+    opacity: 0.85;
+  }
+}
+
+/* Active/pressed state for touch */
+button:active,
+.btn-toolbar:active,
+.sidebar-item:active {
+  opacity: 0.7;
+  transform: scale(0.97);
+}

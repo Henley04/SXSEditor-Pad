@@ -1,0 +1,75 @@
+{
+  "name": "sxseditor",
+  "productName": "SXSEditor",
+  "version": "1.0.0",
+  "description": "SoulX Singer Editor - AI歌声合成工作台",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:web": "webpack --mode production",
+    "dev:web": "webpack serve --mode development",
+    "lint": "eslint src test scripts *.config.js --ext .js",
+    "test": "mocha --require ./test/setup.js \"test/**/*.test.js\" --timeout 30000 --reporter spec",
+    "test:ci": "mocha --require ./test/setup.js \"test/**/*.test.js\" --ignore \"test/onnxModelLoading.test.js\" --timeout 30000 --reporter spec",
+    "test:coverage": "nyc --reporter=text --reporter=html npm test",
+    "test:watch": "mocha --require ./test/setup.js \"test/**/*.test.js\" --timeout 30000 --watch"
+  },
+  "keywords": [
+    "tauri",
+    "svs",
+    "ai",
+    "music",
+    "singing"
+  ],
+  "author": {
+    "name": "SXSEditor Dev",
+    "email": "dev@sxseditor.local"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.2",
+    "@babel/register": "^7.28.6",
+    "@tauri-apps/cli": "^2.0.0",
+    "babel-loader": "^10.1.1",
+    "chai": "^6.2.2",
+    "copy-webpack-plugin": "^14.0.0",
+    "css-loader": "^6.11.0",
+    "eslint": "^9.39.4",
+    "globals": "^17.7.0",
+    "html-webpack-plugin": "^5.6.3",
+    "jsdom": "^29.1.1",
+    "mini-css-extract-plugin": "^2.10.2",
+    "mocha": "^11.7.6",
+    "nyc": "^18.0.0",
+    "sinon": "^21.1.2",
+    "webpack": "^5.98.0",
+    "webpack-cli": "^7.0.3",
+    "webpack-dev-server": "^5.2.1"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-fs": "^2.0.0",
+    "@tauri-apps/plugin-http": "^2.0.0",
+    "@tauri-apps/plugin-notification": "^2.0.0",
+    "@tauri-apps/plugin-process": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.0.0",
+    "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "@tonejs/midi": "^2.0.28",
+    "decibri": "^5.0.0",
+    "onnxruntime-node": "^1.27.0",
+    "onnxruntime-web": "^1.27.0",
+    "pinyin-pro": "^3.28.1",
+    "systeminformation": "^5.31.9"
+  },
+  "optionalDependencies": {
+    "nan": "^2.27.0"
+  },
+  "overrides": {
+    "segfault-handler": "npm:empty-npm-package@1.0.0"
+  }
+}
