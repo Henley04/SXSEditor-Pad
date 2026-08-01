@@ -113,7 +113,7 @@ jobs:
 
       - name: Build Android APK (${{ matrix.arch }})
         run: |
-          npx tauri android build --target ${{ matrix.arch }} --bundles apk --ci
+          npx tauri android build --target ${{ matrix.arch }} --apk --ci
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk-bundle
@@ -193,7 +193,7 @@ jobs:
 
       - name: Build Universal APK (all architectures)
         run: |
-          npx tauri android build --bundles apk --ci
+          npx tauri android build --apk --ci
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk-bundle
