@@ -53,12 +53,19 @@ jobs:
           echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
   build-apk:
-    name: Build Android APK (arm64-v8a)
+    name: Build Android APK
     needs: build-web
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        arch: [arm64-v8a, armeabi-v7a, x86_64]
+        arch: [aarch64, armv7, x86_64]
+        include:
+          - arch: aarch64
+            abi: arm64-v8a
+          - arch: armv7
+            abi: armeabi-v7a
+          - arch: x86_64
+            abi: x86_64
     steps:
       - uses: actions/checkout@v4
 
@@ -111,7 +118,7 @@ jobs:
         run: |
           npx tauri android init --ci 2>/dev/null || true
 
-      - name: Build Android APK (${{ matrix.arch }})
+      - name: Build Android APK (${{ matrix.abi }})
         run: |
           npx tauri android build --target ${{ matrix.arch }} --apk --ci
         env:
@@ -131,7 +138,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SXSEditor-Pad-${{ matrix.arch }}.apk
+          name: SXSEditor-Pad-${{ matrix.abi }}.apk
           path: ${{ steps.apk.outputs.path }}
           retention-days: 7
 

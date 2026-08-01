@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/nicedoc/tauri/refs/heads/dev/crates/tauri-config-schema/schema.json",
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
   "productName": "SXSEditor-Pad",
   "version": "1.0.0",
   "identifier": "com.sxseditor.pad",
@@ -38,11 +38,7 @@
       "icons/icon.png"
     ],
     "android": {
-      "minSdkVersion": 24,
-      "targetSdkVersion": 34
-    },
-    "ios": {
-      "minimumSystemVersion": "15.0"
+      "minSdkVersion": 24
     }
   },
   "plugins": {
