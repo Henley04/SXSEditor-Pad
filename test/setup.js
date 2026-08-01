@@ -76,6 +76,24 @@ if (typeof global.SVGElement === 'undefined') {
 const Module = require('module');
 const _originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
+  // onnxruntime-node requires native binary download (postinstall script).
+  // In CI with --ignore-scripts, the JS files exist but the native binding
+  // fails. Provide a mock so tests that import the pipeline can load.
+  if (request === 'onnxruntime-node' || request === 'onnxruntime-common') {
+    const env = { logLevel: 'error', debug: false };
+    return {
+      env,
+      InferenceSession: {
+        create: async () => ({ run: async () => ({}) }),
+      },
+      Tensor: function (type, data, dims) {
+        this.type = type;
+        this.data = data;
+        this.dims = dims;
+        this.size = data ? data.length : 0;
+      },
+    };
+  }
   if (request === 'electron') {
     return {
       app: {
