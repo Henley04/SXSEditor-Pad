@@ -108,9 +108,6 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0"
-
       - name: Install Android build deps
         run: |
           sudo apt-get update -qq
@@ -195,9 +192,6 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0"
-
       - name: Install Android build deps
         run: |
           sudo apt-get update -qq
@@ -218,7 +212,6 @@ jobs:
           npx tauri android build --apk --ci
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk-bundle
 
       - name: Locate Universal APK
         id: apk
