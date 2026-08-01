@@ -135,10 +135,90 @@ jobs:
           path: ${{ steps.apk.outputs.path }}
           retention-days: 7
 
+  build-universal:
+    name: Build Universal APK (all architectures)
+    needs: build-web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download web dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: dist/
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0"
+
+      - name: Install Android build deps
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+
+      - name: Install Android targets for Rust
+        run: |
+          rustup target add aarch64-linux-android
+          rustup target add armv7-linux-androideabi
+          rustup target add x86_64-linux-android
+
+      - name: Initialize Tauri Android project
+        run: |
+          npx tauri android init --ci 2>/dev/null || true
+
+      - name: Build Universal APK (all architectures)
+        run: |
+          npx tauri android build --bundles apk --ci
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk-bundle
+
+      - name: Locate Universal APK
+        id: apk
+        run: |
+          APK_PATH=$(find src-tauri/gen/android -name "*.apk" -type f | head -1)
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find . -name "*.apk" -type f | head -1)
+          fi
+          echo "path=$APK_PATH" >> $GITHUB_OUTPUT
+          echo "name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
+
+      - name: Upload Universal APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SXSEditor-Pad-universal.apk
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 7
+
   release:
     name: Create GitHub Release
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    needs: [build-web, build-apk]
+    needs: [build-web, build-apk, build-universal]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -160,7 +240,8 @@ jobs:
             AI Singing Voice Synthesis Workstation for mobile devices.
 
             ### Downloads
-            - **arm64-v8a** (recommended for most modern Android tablets/phones)
+            - **universal** (recommended — works on all Android devices)
+            - **arm64-v8a** (for modern ARM64 tablets/phones)
             - **armeabi-v7a** (for older 32-bit ARM devices)
             - **x86_64** (for Android emulators and x86 tablets)
 

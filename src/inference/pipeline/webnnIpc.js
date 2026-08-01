@@ -5,7 +5,15 @@
  * 成功 / 失败 / 超时三条路径上都正确清理 ipcMain 监听器，
  * 避免长时间运行时累积僵尸监听器导致的内存泄漏与 IPC 通道阻塞。
  */
-const { ipcMain } = require('electron');
+/** @type {Electron.IpcMain|null} */
+let ipcMain = null;
+try {
+    ipcMain = require('electron').ipcMain;
+} catch (_) {
+    // Running outside Electron (e.g., test environment) — ipcMain is not available.
+    // Functions in this module will throw if called without a valid ipcMain.
+}
+
 const { IPC_TIMEOUT_INFERENCE, IPC_TIMEOUT_MODEL_LOAD, IPC_TIMEOUT_SYNTHESIS } = require('./constants');
 
 /**
