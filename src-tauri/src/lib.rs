@@ -3,7 +3,7 @@ use tauri::State;
 
 // Mobile entry point (required for Android/iOS builds)
 #[cfg(mobile)]
-tauri::mobile_entry_point!();
+#[tauri::mobile_entry_point]
 
 // Application state
 pub struct AppState {
