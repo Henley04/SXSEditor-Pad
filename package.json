@@ -5,6 +5,7 @@
   "description": "SXSEditor-Pad - AI Singing Voice Synthesis Workstation for Mobile Devices",
   "private": true,
   "scripts": {
+    "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
     "build:web": "webpack --mode production",
