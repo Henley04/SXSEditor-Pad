@@ -97,6 +97,14 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Android NDK
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.0.12077973" --sdk_root=$ANDROID_HOME 2>/dev/null || true
+          NDK_DIR=$(ls -d $ANDROID_HOME/ndk/*/ 2>/dev/null | head -1)
+          if [ -n "$NDK_DIR" ]; then
+            echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          fi
+
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
 
@@ -123,7 +131,6 @@ jobs:
           npx tauri android build --target ${{ matrix.arch }} --apk --ci
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk-bundle
 
       - name: Locate APK
         id: apk
@@ -176,6 +183,14 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.0.12077973" --sdk_root=$ANDROID_HOME 2>/dev/null || true
+          NDK_DIR=$(ls -d $ANDROID_HOME/ndk/*/ 2>/dev/null | head -1)
+          if [ -n "$NDK_DIR" ]; then
+            echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          fi
 
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
