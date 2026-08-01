@@ -1,6 +1,10 @@
 use std::sync::Mutex;
 use tauri::State;
 
+// Mobile entry point (required for Android/iOS builds)
+#[cfg(mobile)]
+tauri::mobile_entry_point!();
+
 // Application state
 pub struct AppState {
     pub settings: Mutex<serde_json::Value>,
