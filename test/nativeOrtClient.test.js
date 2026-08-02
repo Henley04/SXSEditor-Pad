@@ -139,8 +139,10 @@ describe('nativeOrtClient', () => {
       frame.set(hb, 4);
       frame.set(new Uint8Array(outBytes.buffer), 4 + hb.length);
 
+      const rawRunStub = sinon.stub();
       mockApi({
         nativeOrtRunB64: sinon.stub().resolves({ frameB64: codec.bytesToBase64(frame) }),
+        nativeOrtRun: rawRunStub,
       });
       client.__setNativeAvailableForTests(true);
       client.__setPlatformForTests({ platform: 'android', isMobile: true });
@@ -150,7 +152,7 @@ describe('nativeOrtClient', () => {
       });
       const results = await session.run({ input_ids: { data: new BigInt64Array([1n]), dims: [1, 1], type: 'int64' } });
       expect(window.electronAPI.nativeOrtRunB64.calledOnce).to.equal(true);
-      expect(window.electronAPI.nativeOrtRun.callCount).to.equal(0);
+      expect(rawRunStub.callCount).to.equal(0);
       expect(Array.from(results.embeddings.data)).to.deep.equal([42]);
     });
 

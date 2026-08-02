@@ -67,12 +67,14 @@ describe('basicPitchNative', () => {
   describe('frameAudio', () => {
     it('按 AUDIO_N_SAMPLES / HOP_SIZE 分帧并前补零', () => {
       const sr = pp.BASIC_PITCH_SAMPLE_RATE;
-      // 3 秒音频
-      const audio = new Float32Array(sr * 3);
+      // 6 秒音频 → 多窗（3 秒仅一窗：43844 样本窗 + 36164 跳）
+      const audio = new Float32Array(sr * 6);
       for (let i = 0; i < audio.length; i++) audio[i] = Math.sin(i / 100);
       const { frames, nOutputFramesOriginal } = bpn.frameAudio(audio);
       expect(frames.length).to.be.greaterThan(1);
       expect(frames[0].length).to.equal(pp.AUDIO_N_SAMPLES);
+      // 相邻窗起点差 = HOP_SIZE
+      expect(frames[1][0]).to.equal(frames[0][pp.HOP_SIZE]);
       expect(nOutputFramesOriginal).to.equal(Math.floor(audio.length * (pp.ANNOTATIONS_FPS / sr)));
       // 前补零：第一帧前 padLen 个采样为 0
       const padLen = Math.floor(pp.OVERLAP_LENGTH_FRAMES / 2);
