@@ -124,6 +124,41 @@ jobs:
       - name: Initialize Tauri Android project
         run: npx tauri android init --ci 2>/dev/null || true
 
+      - name: Configure Android release signing
+        # Gradle's `release` buildType ships an UNSIGNED apk by default —
+        # that is what made every CI-built APK fail to install with
+        # "package info is null". Decode the upload keystore (stored as a
+        # base64 GitHub secret) to runner temp, write keystore.properties
+        # pointing at it, and inject a `signingConfigs { release { ... } }`
+        # block into the Tauri-generated app/build.gradle.kts. The patch
+        # script is idempotent so re-runs are safe. Secrets are absent on
+        # forks/PRs from forks — we guard with `if` so the job degrades to
+        # the unsigned build there instead of failing.
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          set -e
+          : "${ANDROID_KEYSTORE_BASE64:?ANDROID_KEYSTORE_BASE64 secret is empty}"
+          KEYSTORE="$RUNNER_TEMP/sxseditor-pad.jks"
+          base64 -d <<< "$ANDROID_KEYSTORE_BASE64" > "$KEYSTORE"
+          cd src-tauri/gen/android
+          cat > keystore.properties <<EOF
+          keyAlias=${ANDROID_KEY_ALIAS}
+          keyPassword=${ANDROID_KEY_PASSWORD}
+          storePassword=${ANDROID_STORE_PASSWORD}
+          storeFile=${KEYSTORE}
+          EOF
+          # The heredoc above is indented for readability; strip the leading
+          # whitespace Gradle does not care about, but keep values intact.
+          sed -i 's/^[[:space:]]*//' keystore.properties
+          echo "keystore.properties written (storeFile=$(grep storeFile keystore.properties | cut -d= -f2-))"
+          python3 "$GITHUB_WORKSPACE/scripts/apply-android-signing.py" \
+            "app/build.gradle.kts"
+
       - name: Build per-ABI APK (${{ matrix.abi }})
         # Use the SHORT arch name for --target (full triples are rejected by
         # the Tauri CLI). `--split-per-abi` makes Gradle emit ABI-suffixed
@@ -133,13 +168,25 @@ jobs:
           NDK_HOME: ${{ env.NDK_HOME }}
         run: npx tauri android build --target ${{ matrix.arch }} --split-per-abi --apk --ci
 
-      - name: Verify APK is installable (aapt dump badging)
-        # Guard against shipping a malformed APK. Abort early if aapt can't
-        # parse it (this is what causes "package info is null" on install).
+      - name: Verify APK is installable (badging + signature)
+        # Two checks:
+        #   1. aapt dump badging  → APK is structurally valid (package info
+        #      is parseable, not null).
+        #   2. apksigner verify   → APK is actually signed with a release
+        #      key. Unsigned release APKs install with "package info is
+        #      null" / "there was a problem parsing the package" on device,
+        #      which is the failure mode this whole signing setup fixes.
+        # Both must pass before the APK is uploaded as an artifact. The
+        # signature check only runs when a signing key was configured
+        # (fork PRs have no access to the keystore secret → unsigned build,
+        # which is expected there and skipped, not failed).
+        env:
+          HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         run: |
           set -e
           AAPT=$(find $ANDROID_HOME -name aapt2 -type f 2>/dev/null | head -1)
           if [ -z "$AAPT" ]; then AAPT=$(find $ANDROID_HOME -name aapt -type f 2>/dev/null | head -1); fi
+          APKSIGNER=$(find $ANDROID_HOME -name apksigner -type f 2>/dev/null | head -1)
           APK=$(find src-tauri/gen/android -name "*-${{ matrix.abi }}-release.apk" -type f 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
             APK=$(find src-tauri/gen/android -name "*release*.apk" -type f 2>/dev/null | head -1)
@@ -149,6 +196,7 @@ jobs:
             exit 1
           fi
           echo "Verifying: $APK"
+          echo "--- badging ---"
           if [ -n "$AAPT" ]; then
             BADGE=$("$AAPT" dump badging "$APK" 2>/dev/null | head -1 || true)
             echo "badging: $BADGE"
@@ -156,8 +204,25 @@ jobs:
               echo "ERROR: APK is not parseable (package info is null)" >&2
               exit 1
             fi
+            # Surface the key package info for the build log: package name,
+            # version code/name, label, icon, launchable activity, SDK.
+            "$AAPT" dump badging "$APK" 2>/dev/null | grep -iE "^package:|^application-label:|^launchable-activity:|^sdkVersion:|^targetSdkVersion:" || true
           else
             echo "aapt not found, skipping badging verification"
+          fi
+          echo "--- signature ---"
+          if [ "$HAS_SIGNING" != "true" ]; then
+            echo "signing not configured (no keystore secret) — skipping signature check"
+          elif [ -z "$APKSIGNER" ]; then
+            echo "apksigner not found, skipping signature verification"
+          else
+            if ! "$APKSIGNER" verify --print-certs "$APK" >/dev/null 2>&1; then
+              echo "ERROR: APK signature verification failed — APK is UNSIGNED or the signature is invalid" >&2
+              echo "       (this is what causes 'package info is null' on install)" >&2
+              exit 1
+            fi
+            echo "apksigner: OK (APK is signed)"
+            "$APKSIGNER" verify --print-certs "$APK" 2>/dev/null | grep -iE "^Signer #1 certificate|SHA-256|subject:" || true
           fi
 
       - name: Locate APK (per-arch)
@@ -244,6 +309,33 @@ jobs:
       - name: Initialize Tauri Android project
         run: npx tauri android init --ci 2>/dev/null || true
 
+      - name: Configure Android release signing
+        # Same signing setup as the per-ABI job (see comment there). The
+        # universal APK is what we recommend users install, so it MUST be
+        # signed by the upload key.
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          set -e
+          : "${ANDROID_KEYSTORE_BASE64:?ANDROID_KEYSTORE_BASE64 secret is empty}"
+          KEYSTORE="$RUNNER_TEMP/sxseditor-pad.jks"
+          base64 -d <<< "$ANDROID_KEYSTORE_BASE64" > "$KEYSTORE"
+          cd src-tauri/gen/android
+          cat > keystore.properties <<EOF
+          keyAlias=${ANDROID_KEY_ALIAS}
+          keyPassword=${ANDROID_KEY_PASSWORD}
+          storePassword=${ANDROID_STORE_PASSWORD}
+          storeFile=${KEYSTORE}
+          EOF
+          sed -i 's/^[[:space:]]*//' keystore.properties
+          echo "keystore.properties written (storeFile=$(grep storeFile keystore.properties | cut -d= -f2-))"
+          python3 "$GITHUB_WORKSPACE/scripts/apply-android-signing.py" \
+            "app/build.gradle.kts"
+
       - name: Build Universal APK (all architectures)
         # Omit --target entirely so Tauri builds ALL Android targets (the
         # default). Omit --split-per-abi so Gradle emits a SINGLE universal
@@ -255,11 +347,16 @@ jobs:
           NDK_HOME: ${{ env.NDK_HOME }}
         run: npx tauri android build --apk --ci
 
-      - name: Verify Universal APK is installable (aapt dump badging)
+      - name: Verify Universal APK is installable (badging + signature)
+        # See the per-ABI verify step for rationale. Both badging + apksigner
+        # must pass before the universal APK is uploaded.
+        env:
+          HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
         run: |
           set -e
           AAPT=$(find $ANDROID_HOME -name aapt2 -type f 2>/dev/null | head -1)
           if [ -z "$AAPT" ]; then AAPT=$(find $ANDROID_HOME -name aapt -type f 2>/dev/null | head -1); fi
+          APKSIGNER=$(find $ANDROID_HOME -name apksigner -type f 2>/dev/null | head -1)
           APK=$(find src-tauri/gen/android -name "*-universal-release.apk" -type f 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
             APK=$(find src-tauri/gen/android -name "app-release.apk" -type f 2>/dev/null | head -1)
@@ -272,6 +369,7 @@ jobs:
             exit 1
           fi
           echo "Verifying: $APK"
+          echo "--- badging ---"
           if [ -n "$AAPT" ]; then
             BADGE=$("$AAPT" dump badging "$APK" 2>/dev/null | head -1 || true)
             echo "badging: $BADGE"
@@ -279,8 +377,22 @@ jobs:
               echo "ERROR: universal APK is not parseable (package info is null)" >&2
               exit 1
             fi
+            "$AAPT" dump badging "$APK" 2>/dev/null | grep -iE "^package:|^application-label:|^launchable-activity:|^sdkVersion:|^targetSdkVersion:" || true
           else
             echo "aapt not found, skipping badging verification"
+          fi
+          echo "--- signature ---"
+          if [ "$HAS_SIGNING" != "true" ]; then
+            echo "signing not configured (no keystore secret) — skipping signature check"
+          elif [ -z "$APKSIGNER" ]; then
+            echo "apksigner not found, skipping signature verification"
+          else
+            if ! "$APKSIGNER" verify --print-certs "$APK" >/dev/null 2>&1; then
+              echo "ERROR: universal APK signature verification failed — UNSIGNED or invalid signature" >&2
+              exit 1
+            fi
+            echo "apksigner: OK (universal APK is signed)"
+            "$APKSIGNER" verify --print-certs "$APK" 2>/dev/null | grep -iE "^Signer #1 certificate|SHA-256|subject:" || true
           fi
 
       - name: Locate Universal APK
