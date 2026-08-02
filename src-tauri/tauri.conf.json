@@ -40,13 +40,5 @@
     "android": {
       "minSdkVersion": 24
     }
-  },
-  "plugins": {
-    "fs": {
-      "scope": {
-        "allow": ["$APPDATA/**", "$RESOURCE/**", "$HOME/**", "$TEMP/**"],
-        "deny": []
-      }
-    }
   }
 }

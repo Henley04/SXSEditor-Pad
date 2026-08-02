@@ -21,6 +21,10 @@
     "fs:allow-remove",
     "fs:allow-rename",
     "fs:allow-copy-file",
+    {
+      "identifier": "fs:scope",
+      "allow": ["$APPDATA/**", "$RESOURCE/**", "$HOME/**", "$TEMP/**"]
+    },
     "shell:default",
     "shell:allow-open",
     "http:default",
