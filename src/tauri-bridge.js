@@ -13,6 +13,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, emit } from '@tauri-apps/api/event';
 import { readFile } from '@tauri-apps/plugin-fs';
+import * as spa from './spa/router.js';
 
 // --------------------------- event helpers ---------------------------
 
@@ -70,7 +71,35 @@ const tauriBridge = {
   onFragmentSVSChunkAudio: (callback) => onEvent('fragment-svs:chunk-audio', callback),
 
   // Fragment editor persistence
-  openFragmentEditor: (data) => invoke('open_fragment_editor', { data }),
+  // SPA navigation + 信箱 + 事件: the fragment editor is now an in-WebView
+  // view, not a separate BrowserWindow. `openFragmentEditor`:
+  //   1. Persists the serializable {fragment, project} payload via the
+  //      file-backed mailbox (`save_fragment_data`) so the target view can
+  //      fetch it through `get_fragment_data` after the page loads.
+  //   2. Stashes the non-serializable wavBuffer in the SPA mailbox
+  //      (in-memory + sessionStorage base64 when it fits).
+  //   3. Navigates to the fragment-editor view with `#fragmentId=…` so the
+  //      view's `loadFragmentFromHash()` can pick the right payload.
+  //   4. Emits a `spa:navigate` event (typed subscribers + DOM CustomEvent).
+  openFragmentEditor: async (data) => {
+    const fragmentId = data && data.fragment ? data.fragment.id : undefined;
+    if (fragmentId !== undefined && fragmentId !== null) {
+      try {
+        await invoke('save_fragment_data', {
+          fragmentId: String(fragmentId),
+          data: { fragment: data.fragment, project: data.project },
+        });
+      } catch (e) {
+        // File mailbox failure is non-fatal: the SPA mailbox still carries
+        // the full payload for same-page handoff.
+        console.warn('[bridge] saveFragmentData failed:', e);
+      }
+    }
+    // SPA mailbox: carries the wavBuffer (and re-carries fragment/project for
+    // same-page SPA where the file round-trip is unnecessary).
+    spa.mailbox('fragment-editor', data);
+    spa.navigate('fragment-editor', null, { fragmentId: fragmentId != null ? String(fragmentId) : '' });
+  },
   saveFragmentData: (fragmentId, data) => invoke('save_fragment_data', { fragmentId, data }),
   saveFragmentDataSync: (fragmentId, data) => invoke('save_fragment_data', { fragmentId, data }),
   getFragmentData: (fragmentId) => invoke('get_fragment_data', { fragmentId }),
@@ -82,15 +111,21 @@ const tauriBridge = {
   onFragmentBoundsChanged: (callback) => onEvent('fragmentBoundsChanged', callback),
   updateProjectSettings: (projectData) => invoke('update_project_settings', { projectData }),
   onProjectSettingsChanged: (callback) => onEvent('projectSettingsChanged', callback),
-  openSingerCreator: () => invoke('open_singer_creator'),
-  openSingerMarket: () => invoke('open_singer_market'),
+  // SPA navigation for the remaining former child windows. Each call stashes
+  // its payload in the SPA mailbox and navigates to the corresponding view;
+  // the view's controller reads the payload back via `spa.consumeMail(route)`.
+  openSingerCreator: () => spa.navigate('singer-creator'),
+  openSingerMarket: () => spa.navigate('singer-market'),
   saveSingerFile: (singerData) => invoke('save_singer_file', { singerData }),
   onSingerCreatorSaveRequest: (callback) => onEvent('singer-creator:save-request', callback),
   onSingerCreatorSaveAsRequest: (callback) => onEvent('singer-creator:save-as-request', callback),
   onSingerCreated: (callback) => onEvent('singerCreated', callback),
 
   // Audio preprocess
-  openAudioPreprocess: (data) => invoke('open_audio_preprocess', { data }),
+  openAudioPreprocess: (data) => {
+    spa.mailbox('audio-preprocess', data);
+    return spa.navigate('audio-preprocess');
+  },
   sendPreprocessData: (data) => invoke('send_preprocess_data', { data }),
   onPreprocessDataSaved: (callback) => onEvent('preprocessDataSaved', callback),
   onLoadPreprocessData: (callback) => onEvent('loadPreprocessData', callback),
@@ -153,7 +188,13 @@ const tauriBridge = {
   modelDownloadCheck: () => invoke('model_download_check'),
   modelDownloadChangeDir: () => invoke('model_download_change_dir'),
   modelDownloadGetDir: () => invoke('model_download_get_dir'),
-  modelDownloadOpen: (precision) => invoke('model_download_open', { precision }),
+  // SPA navigation: announce precision to the model-download view (was a Rust
+  // emit) and switch to it. The view reads precision from the event / mailbox.
+  modelDownloadOpen: (precision) => {
+    emitEvent('model-download:precision', precision);
+    spa.mailbox('model-download', { precision });
+    return spa.navigate('model-download', null, { precision: precision || '' });
+  },
   modelDownloadDeleteAndRecheck: (precision) => invoke('model_download_delete_and_recheck', { precision }),
   modelDownloadRecheck: (precision) => invoke('model_download_recheck', { precision }),
   modelDownloadCheckJp: (precision) => invoke('model_download_check_jp', { precision }),
@@ -213,8 +254,8 @@ const tauriBridge = {
   onMainMenuSaveRequest: (callback) => onEvent('main-menu:save-request', callback),
   onMainMenuSaveAsRequest: (callback) => onEvent('main-menu:save-as-request', callback),
 
-  // Resource manager
-  resmgrOpen: () => invoke('resmgr_open'),
+  // Resource manager — SPA navigation to the resource-manager view.
+  resmgrOpen: () => spa.navigate('resource-manager'),
   resmgrGetGPUInfo: () => invoke('resmgr_get_gpu_info'),
   resmgrGetModelGroups: () => invoke('resmgr_get_model_groups'),
   resmgrLoadModel: (groupId, modelId) => invoke('resmgr_load_model', { groupId, modelId }),
@@ -282,7 +323,8 @@ const tauriBridge = {
     skipVersion: (version) => invoke('update_skip_version', { version }),
     dontRemind: () => invoke('update_dont_remind'),
     openDownloadPage: (url) => invoke('update_open_download_page', { url }),
-    openModelDownload: () => invoke('update_open_model_download'),
+    // SPA navigation: jump to the model-download view from the update notification.
+    openModelDownload: () => spa.navigate('model-download'),
     downloadInstaller: (url, version) => invoke('update_download_installer', { url, version }),
     cancelDownload: () => invoke('update_cancel_download'),
     installInstaller: (filePath) => invoke('update_install_installer', { filePath }),
@@ -305,6 +347,23 @@ const tauriBridge = {
     download: (fileId) => invoke('singer_market_download', { fileId }),
     pickFile: () => invoke('singer_market_pick_file'),
     pickSavePath: (suggestedName) => invoke('singer_market_pick_save_path', { suggestedName: suggestedName || null }),
+  },
+
+  // ---------------- SPA router (信箱 + 事件 + view navigation) ----------------
+  // Exposed so views can consume their mailbox payload through the same
+  // `window.electronAPI` surface they already use, without each view having
+  // to import the router module directly. The fragment editor's loader, for
+  // example, calls `electronAPI.spa.consumeMail('fragment-editor')` to pick
+  // up the wavBuffer stashed by `openFragmentEditor`.
+  spa: {
+    navigate: (route, data, params) => spa.navigate(route, data, params),
+    consumeMail: (route) => spa.consumeMail(route),
+    peekMail: (route) => spa.peekMail(route),
+    mailbox: (route, data) => spa.mailbox(route, data),
+    onNavigate: (callback) => spa.onNavigate(callback),
+    getCurrentRoute: () => spa.getCurrentRoute(),
+    listRoutes: () => spa.listRoutes(),
+    resolveRouteUrl: (route) => spa.resolveRouteUrl(route),
   },
 };
 

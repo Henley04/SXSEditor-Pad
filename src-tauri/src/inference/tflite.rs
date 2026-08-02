@@ -36,18 +36,27 @@ struct TfLiteApi {
     options_create: unsafe extern "C" fn() -> *mut TfLiteInterpreterOptions,
     options_set_num_threads: unsafe extern "C" fn(*mut TfLiteInterpreterOptions, i32),
     options_delete: unsafe extern "C" fn(*mut TfLiteInterpreterOptions),
-    options_add_delegate: Option<unsafe extern "C" fn(*mut TfLiteInterpreterOptions, *mut TfLiteDelegate)>,
-    interpreter_create: unsafe extern "C" fn(*const TfLiteModel, *const TfLiteInterpreterOptions) -> *mut TfLiteInterpreter,
+    options_add_delegate:
+        Option<unsafe extern "C" fn(*mut TfLiteInterpreterOptions, *mut TfLiteDelegate)>,
+    interpreter_create: unsafe extern "C" fn(
+        *const TfLiteModel,
+        *const TfLiteInterpreterOptions,
+    ) -> *mut TfLiteInterpreter,
     interpreter_delete: unsafe extern "C" fn(*mut TfLiteInterpreter),
     interpreter_get_input_tensor_count: unsafe extern "C" fn(*const TfLiteInterpreter) -> i32,
     interpreter_get_output_tensor_count: unsafe extern "C" fn(*const TfLiteInterpreter) -> i32,
-    interpreter_get_input_tensor: unsafe extern "C" fn(*mut TfLiteInterpreter, i32) -> *mut TfLiteTensor,
-    interpreter_get_output_tensor: unsafe extern "C" fn(*mut TfLiteInterpreter, i32) -> *mut TfLiteTensor,
-    interpreter_resize_input_tensor: unsafe extern "C" fn(*mut TfLiteInterpreter, i32, *const c_int, i32) -> TfLiteStatus,
+    interpreter_get_input_tensor:
+        unsafe extern "C" fn(*mut TfLiteInterpreter, i32) -> *mut TfLiteTensor,
+    interpreter_get_output_tensor:
+        unsafe extern "C" fn(*mut TfLiteInterpreter, i32) -> *mut TfLiteTensor,
+    interpreter_resize_input_tensor:
+        unsafe extern "C" fn(*mut TfLiteInterpreter, i32, *const c_int, i32) -> TfLiteStatus,
     interpreter_allocate_tensors: unsafe extern "C" fn(*mut TfLiteInterpreter) -> TfLiteStatus,
     interpreter_invoke: unsafe extern "C" fn(*mut TfLiteInterpreter) -> TfLiteStatus,
-    tensor_copy_from_buffer: unsafe extern "C" fn(*mut TfLiteTensor, *const c_void, usize) -> TfLiteStatus,
-    tensor_copy_to_buffer: unsafe extern "C" fn(*const TfLiteTensor, *mut c_void, usize) -> TfLiteStatus,
+    tensor_copy_from_buffer:
+        unsafe extern "C" fn(*mut TfLiteTensor, *const c_void, usize) -> TfLiteStatus,
+    tensor_copy_to_buffer:
+        unsafe extern "C" fn(*const TfLiteTensor, *mut c_void, usize) -> TfLiteStatus,
     tensor_byte_size: unsafe extern "C" fn(*const TfLiteTensor) -> usize,
     tensor_num_dims: unsafe extern "C" fn(*const TfLiteTensor) -> c_int,
     tensor_dim: unsafe extern "C" fn(*const TfLiteTensor, c_int) -> c_int,
@@ -115,30 +124,134 @@ fn load_api(explicit: Option<&str>) -> Result<TfLiteApi, String> {
         }
         return (|| {
             Ok(TfLiteApi {
-                model_create_from_file: sym!(lib, b"TfLiteModelCreateFromFile\0", unsafe extern "C" fn(*const c_char) -> *mut TfLiteModel),
-                model_delete: sym!(lib, b"TfLiteModelDelete\0", unsafe extern "C" fn(*mut TfLiteModel)),
-                options_create: sym!(lib, b"TfLiteInterpreterOptionsCreate\0", unsafe extern "C" fn() -> *mut TfLiteInterpreterOptions),
-                options_set_num_threads: sym!(lib, b"TfLiteInterpreterOptionsSetNumThreads\0", unsafe extern "C" fn(*mut TfLiteInterpreterOptions, i32)),
-                options_delete: sym!(lib, b"TfLiteInterpreterOptionsDelete\0", unsafe extern "C" fn(*mut TfLiteInterpreterOptions)),
-                options_add_delegate: opt_sym!(lib, b"TfLiteInterpreterOptionsAddDelegate\0", unsafe extern "C" fn(*mut TfLiteInterpreterOptions, *mut TfLiteDelegate)),
-                interpreter_create: sym!(lib, b"TfLiteInterpreterCreate\0", unsafe extern "C" fn(*const TfLiteModel, *const TfLiteInterpreterOptions) -> *mut TfLiteInterpreter),
-                interpreter_delete: sym!(lib, b"TfLiteInterpreterDelete\0", unsafe extern "C" fn(*mut TfLiteInterpreter)),
-                interpreter_get_input_tensor_count: sym!(lib, b"TfLiteInterpreterGetInputTensorCount\0", unsafe extern "C" fn(*const TfLiteInterpreter) -> i32),
-                interpreter_get_output_tensor_count: sym!(lib, b"TfLiteInterpreterGetOutputTensorCount\0", unsafe extern "C" fn(*const TfLiteInterpreter) -> i32),
-                interpreter_get_input_tensor: sym!(lib, b"TfLiteInterpreterGetInputTensor\0", unsafe extern "C" fn(*mut TfLiteInterpreter, i32) -> *mut TfLiteTensor),
-                interpreter_get_output_tensor: sym!(lib, b"TfLiteInterpreterGetOutputTensor\0", unsafe extern "C" fn(*mut TfLiteInterpreter, i32) -> *mut TfLiteTensor),
-                interpreter_resize_input_tensor: sym!(lib, b"TfLiteInterpreterResizeInputTensor\0", unsafe extern "C" fn(*mut TfLiteInterpreter, i32, *const c_int, i32) -> TfLiteStatus),
-                interpreter_allocate_tensors: sym!(lib, b"TfLiteInterpreterAllocateTensors\0", unsafe extern "C" fn(*mut TfLiteInterpreter) -> TfLiteStatus),
-                interpreter_invoke: sym!(lib, b"TfLiteInterpreterInvoke\0", unsafe extern "C" fn(*mut TfLiteInterpreter) -> TfLiteStatus),
-                tensor_copy_from_buffer: sym!(lib, b"TfLiteTensorCopyFromBuffer\0", unsafe extern "C" fn(*mut TfLiteTensor, *const c_void, usize) -> TfLiteStatus),
-                tensor_copy_to_buffer: sym!(lib, b"TfLiteTensorCopyToBuffer\0", unsafe extern "C" fn(*const TfLiteTensor, *mut c_void, usize) -> TfLiteStatus),
-                tensor_byte_size: sym!(lib, b"TfLiteTensorByteSize\0", unsafe extern "C" fn(*const TfLiteTensor) -> usize),
-                tensor_num_dims: sym!(lib, b"TfLiteTensorNumDims\0", unsafe extern "C" fn(*const TfLiteTensor) -> c_int),
-                tensor_dim: sym!(lib, b"TfLiteTensorDim\0", unsafe extern "C" fn(*const TfLiteTensor, c_int) -> c_int),
-                nnapi_delegate_create: opt_sym!(lib, b"TfLiteNnapiDelegateCreate\0", unsafe extern "C" fn(*const c_void) -> *mut TfLiteDelegate),
-                nnapi_delegate_delete: opt_sym!(lib, b"TfLiteNnapiDelegateDelete\0", unsafe extern "C" fn(*mut TfLiteDelegate)),
-                coreml_delegate_create: opt_sym!(lib, b"TfLiteCoreMlDelegateCreate\0", unsafe extern "C" fn(*const c_void) -> *mut TfLiteDelegate),
-                coreml_delegate_delete: opt_sym!(lib, b"TfLiteCoreMlDelegateDelete\0", unsafe extern "C" fn(*mut TfLiteDelegate)),
+                model_create_from_file: sym!(
+                    lib,
+                    b"TfLiteModelCreateFromFile\0",
+                    unsafe extern "C" fn(*const c_char) -> *mut TfLiteModel
+                ),
+                model_delete: sym!(
+                    lib,
+                    b"TfLiteModelDelete\0",
+                    unsafe extern "C" fn(*mut TfLiteModel)
+                ),
+                options_create: sym!(
+                    lib,
+                    b"TfLiteInterpreterOptionsCreate\0",
+                    unsafe extern "C" fn() -> *mut TfLiteInterpreterOptions
+                ),
+                options_set_num_threads: sym!(
+                    lib,
+                    b"TfLiteInterpreterOptionsSetNumThreads\0",
+                    unsafe extern "C" fn(*mut TfLiteInterpreterOptions, i32)
+                ),
+                options_delete: sym!(
+                    lib,
+                    b"TfLiteInterpreterOptionsDelete\0",
+                    unsafe extern "C" fn(*mut TfLiteInterpreterOptions)
+                ),
+                options_add_delegate: opt_sym!(
+                    lib,
+                    b"TfLiteInterpreterOptionsAddDelegate\0",
+                    unsafe extern "C" fn(*mut TfLiteInterpreterOptions, *mut TfLiteDelegate)
+                ),
+                interpreter_create: sym!(
+                    lib,
+                    b"TfLiteInterpreterCreate\0",
+                    unsafe extern "C" fn(
+                        *const TfLiteModel,
+                        *const TfLiteInterpreterOptions,
+                    ) -> *mut TfLiteInterpreter
+                ),
+                interpreter_delete: sym!(
+                    lib,
+                    b"TfLiteInterpreterDelete\0",
+                    unsafe extern "C" fn(*mut TfLiteInterpreter)
+                ),
+                interpreter_get_input_tensor_count: sym!(
+                    lib,
+                    b"TfLiteInterpreterGetInputTensorCount\0",
+                    unsafe extern "C" fn(*const TfLiteInterpreter) -> i32
+                ),
+                interpreter_get_output_tensor_count: sym!(
+                    lib,
+                    b"TfLiteInterpreterGetOutputTensorCount\0",
+                    unsafe extern "C" fn(*const TfLiteInterpreter) -> i32
+                ),
+                interpreter_get_input_tensor: sym!(
+                    lib,
+                    b"TfLiteInterpreterGetInputTensor\0",
+                    unsafe extern "C" fn(*mut TfLiteInterpreter, i32) -> *mut TfLiteTensor
+                ),
+                interpreter_get_output_tensor: sym!(
+                    lib,
+                    b"TfLiteInterpreterGetOutputTensor\0",
+                    unsafe extern "C" fn(*mut TfLiteInterpreter, i32) -> *mut TfLiteTensor
+                ),
+                interpreter_resize_input_tensor: sym!(
+                    lib,
+                    b"TfLiteInterpreterResizeInputTensor\0",
+                    unsafe extern "C" fn(
+                        *mut TfLiteInterpreter,
+                        i32,
+                        *const c_int,
+                        i32,
+                    ) -> TfLiteStatus
+                ),
+                interpreter_allocate_tensors: sym!(
+                    lib,
+                    b"TfLiteInterpreterAllocateTensors\0",
+                    unsafe extern "C" fn(*mut TfLiteInterpreter) -> TfLiteStatus
+                ),
+                interpreter_invoke: sym!(
+                    lib,
+                    b"TfLiteInterpreterInvoke\0",
+                    unsafe extern "C" fn(*mut TfLiteInterpreter) -> TfLiteStatus
+                ),
+                tensor_copy_from_buffer: sym!(
+                    lib,
+                    b"TfLiteTensorCopyFromBuffer\0",
+                    unsafe extern "C" fn(*mut TfLiteTensor, *const c_void, usize) -> TfLiteStatus
+                ),
+                tensor_copy_to_buffer: sym!(
+                    lib,
+                    b"TfLiteTensorCopyToBuffer\0",
+                    unsafe extern "C" fn(*const TfLiteTensor, *mut c_void, usize) -> TfLiteStatus
+                ),
+                tensor_byte_size: sym!(
+                    lib,
+                    b"TfLiteTensorByteSize\0",
+                    unsafe extern "C" fn(*const TfLiteTensor) -> usize
+                ),
+                tensor_num_dims: sym!(
+                    lib,
+                    b"TfLiteTensorNumDims\0",
+                    unsafe extern "C" fn(*const TfLiteTensor) -> c_int
+                ),
+                tensor_dim: sym!(
+                    lib,
+                    b"TfLiteTensorDim\0",
+                    unsafe extern "C" fn(*const TfLiteTensor, c_int) -> c_int
+                ),
+                nnapi_delegate_create: opt_sym!(
+                    lib,
+                    b"TfLiteNnapiDelegateCreate\0",
+                    unsafe extern "C" fn(*const c_void) -> *mut TfLiteDelegate
+                ),
+                nnapi_delegate_delete: opt_sym!(
+                    lib,
+                    b"TfLiteNnapiDelegateDelete\0",
+                    unsafe extern "C" fn(*mut TfLiteDelegate)
+                ),
+                coreml_delegate_create: opt_sym!(
+                    lib,
+                    b"TfLiteCoreMlDelegateCreate\0",
+                    unsafe extern "C" fn(*const c_void) -> *mut TfLiteDelegate
+                ),
+                coreml_delegate_delete: opt_sym!(
+                    lib,
+                    b"TfLiteCoreMlDelegateDelete\0",
+                    unsafe extern "C" fn(*mut TfLiteDelegate)
+                ),
                 _lib: lib,
             })
         })();
@@ -346,7 +459,11 @@ pub fn run(model_id: &str, inputs: &[JsonValue]) -> Result<JsonValue, String> {
             let shape: Vec<i32> = input
                 .get("shape")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|d| d.as_i64().map(|x| x as i32)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|d| d.as_i64().map(|x| x as i32))
+                        .collect()
+                })
                 .unwrap_or_default();
             let data_b64 = input
                 .get("dataB64")

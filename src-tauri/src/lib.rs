@@ -214,7 +214,11 @@ async fn theme_current(app: AppHandle, _options: Option<Value>) -> Result<Value,
 }
 
 #[tauri::command]
-async fn theme_apply(app: AppHandle, theme_id: String, _options: Option<Value>) -> Result<Value, String> {
+async fn theme_apply(
+    app: AppHandle,
+    theme_id: String,
+    _options: Option<Value>,
+) -> Result<Value, String> {
     let mut settings = models::read_settings(&app);
     settings["theme"] = json!(theme_id);
     models::write_settings(&app, &settings)?;
@@ -278,7 +282,10 @@ async fn model_download_check(app: AppHandle) -> Result<Value, String> {
         .unwrap_or(models::DEFAULT_PRECISION)
         .to_string();
     let missing = models::check_missing(&app, &prec, "master").await;
-    let _ = app.emit("model-download:missing-files", json!({ "files": missing, "precision": prec }));
+    let _ = app.emit(
+        "model-download:missing-files",
+        json!({ "files": missing, "precision": prec }),
+    );
     Ok(json!({ "files": missing, "precision": prec }))
 }
 
@@ -359,7 +366,10 @@ async fn model_download_update(
 // --- Version checks (stubbed: only master revision is wired up for now) ---
 
 #[tauri::command]
-async fn model_download_check_version(_app: AppHandle, _precision: String) -> Result<Value, String> {
+async fn model_download_check_version(
+    _app: AppHandle,
+    _precision: String,
+) -> Result<Value, String> {
     Ok(json!({
         "updateAvailable": false,
         "localVersion": null,
@@ -370,7 +380,10 @@ async fn model_download_check_version(_app: AppHandle, _precision: String) -> Re
 }
 
 #[tauri::command]
-async fn model_download_list_versions(_app: AppHandle, _precision: String) -> Result<Value, String> {
+async fn model_download_list_versions(
+    _app: AppHandle,
+    _precision: String,
+) -> Result<Value, String> {
     Ok(json!([{ "tag": "master" }]))
 }
 
@@ -423,7 +436,10 @@ async fn model_download_unload_sifigan(_app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn model_download_check_jp_version(_app: AppHandle, _precision: String) -> Result<Value, String> {
+async fn model_download_check_jp_version(
+    _app: AppHandle,
+    _precision: String,
+) -> Result<Value, String> {
     Ok(json!({ "updateAvailable": false, "latestVersion": null }))
 }
 
@@ -447,7 +463,10 @@ async fn model_download_update_sifigan(_app: AppHandle, _revision: String) -> Re
 }
 
 #[tauri::command]
-async fn model_download_list_jp_versions(_app: AppHandle, _precision: String) -> Result<Value, String> {
+async fn model_download_list_jp_versions(
+    _app: AppHandle,
+    _precision: String,
+) -> Result<Value, String> {
     Ok(json!([]))
 }
 
@@ -493,7 +512,11 @@ async fn webnn_unload_model(_app: AppHandle, _model_id: String) -> Result<(), St
 }
 
 #[tauri::command]
-async fn webnn_run_inference(_app: AppHandle, _model_id: String, _inputs: Value) -> Result<Value, String> {
+async fn webnn_run_inference(
+    _app: AppHandle,
+    _model_id: String,
+    _inputs: Value,
+) -> Result<Value, String> {
     Err("webnn:runInference is renderer-only (onnxruntime-web)".to_string())
 }
 
@@ -520,7 +543,10 @@ async fn native_ort_init(lib_path: Option<String>) -> Result<Value, String> {
 
 #[tauri::command]
 async fn native_ort_detect_accelerators() -> Result<Value, String> {
-    Ok(inference::ort_engine::status().get("accelerators").cloned().unwrap_or_else(|| json!({})))
+    Ok(inference::ort_engine::status()
+        .get("accelerators")
+        .cloned()
+        .unwrap_or_else(|| json!({})))
 }
 
 #[tauri::command]
@@ -558,9 +584,10 @@ async fn native_ort_run(request: tauri::ipc::Request<'_>) -> Result<tauri::ipc::
         tauri::ipc::InvokeBody::Json(v) => serde_json::from_value::<Vec<u8>>(v.clone())
             .map_err(|e| format!("bad invoke body: {e}"))?,
     };
-    let out = tauri::async_runtime::spawn_blocking(move || inference::ort_engine::run_frame(&bytes))
-        .await
-        .map_err(|e| e.to_string())??;
+    let out =
+        tauri::async_runtime::spawn_blocking(move || inference::ort_engine::run_frame(&bytes))
+            .await
+            .map_err(|e| e.to_string())??;
     Ok(tauri::ipc::Response::new(out))
 }
 
@@ -572,9 +599,10 @@ async fn native_ort_run_b64(frame_b64: String) -> Result<Value, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(&frame_b64)
         .map_err(|e| format!("bad frame base64: {e}"))?;
-    let out = tauri::async_runtime::spawn_blocking(move || inference::ort_engine::run_frame(&bytes))
-        .await
-        .map_err(|e| e.to_string())??;
+    let out =
+        tauri::async_runtime::spawn_blocking(move || inference::ort_engine::run_frame(&bytes))
+            .await
+            .map_err(|e| e.to_string())??;
     Ok(json!({ "frameB64": base64::engine::general_purpose::STANDARD.encode(out) }))
 }
 
@@ -635,7 +663,13 @@ async fn native_export_wav(
     path: String,
 ) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        inference::audio_export::export_wav(&samples_b64, sample_rate, channels, bits_per_sample, &path)
+        inference::audio_export::export_wav(
+            &samples_b64,
+            sample_rate,
+            channels,
+            bits_per_sample,
+            &path,
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -644,9 +678,10 @@ async fn native_export_wav(
 #[tauri::command]
 async fn native_sha256_file(path: String) -> Result<Value, String> {
     let p = path.clone();
-    let digest = tauri::async_runtime::spawn_blocking(move || inference::audio_export::sha256_file(&p))
-        .await
-        .map_err(|e| e.to_string())??;
+    let digest =
+        tauri::async_runtime::spawn_blocking(move || inference::audio_export::sha256_file(&p))
+            .await
+            .map_err(|e| e.to_string())??;
     Ok(json!({ "path": path, "sha256": digest }))
 }
 
@@ -710,7 +745,11 @@ async fn fragment_svs_dispose() -> Result<(), String> {
 // ============================ Fragment / project persistence ============================
 
 #[tauri::command]
-async fn save_fragment_data(app: AppHandle, fragment_id: String, data: Value) -> Result<(), String> {
+async fn save_fragment_data(
+    app: AppHandle,
+    fragment_id: String,
+    data: Value,
+) -> Result<(), String> {
     let dir = fragments_dir(&app);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{}.json", fragment_id));
@@ -745,7 +784,11 @@ async fn fragment_close_all(_app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn update_fragment_bounds(_app: AppHandle, _fragment_id: String, _data: Value) -> Result<(), String> {
+async fn update_fragment_bounds(
+    _app: AppHandle,
+    _fragment_id: String,
+    _data: Value,
+) -> Result<(), String> {
     Ok(())
 }
 
@@ -916,12 +959,20 @@ async fn resmgr_get_model_groups() -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn resmgr_load_model(_app: AppHandle, _group_id: String, _model_id: String) -> Result<(), String> {
+async fn resmgr_load_model(
+    _app: AppHandle,
+    _group_id: String,
+    _model_id: String,
+) -> Result<(), String> {
     Err("Model loading is renderer-only (WebNN)".to_string())
 }
 
 #[tauri::command]
-async fn resmgr_unload_model(_app: AppHandle, _group_id: String, _model_id: String) -> Result<(), String> {
+async fn resmgr_unload_model(
+    _app: AppHandle,
+    _group_id: String,
+    _model_id: String,
+) -> Result<(), String> {
     Err("Model unloading is renderer-only (WebNN)".to_string())
 }
 
@@ -1040,7 +1091,10 @@ async fn singer_market_pick_file(app: AppHandle) -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn singer_market_pick_save_path(app: AppHandle, suggested_name: Option<String>) -> Result<Value, String> {
+async fn singer_market_pick_save_path(
+    app: AppHandle,
+    suggested_name: Option<String>,
+) -> Result<Value, String> {
     let mut builder = app.dialog().file().set_title("Save as");
     if let Some(name) = suggested_name {
         builder = builder.set_file_name(&name);

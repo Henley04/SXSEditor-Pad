@@ -209,7 +209,8 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
     let mut last_err = String::new();
     for candidate in candidate_lib_paths(explicit_lib_path) {
         let display = candidate.to_string_lossy().to_string();
-        let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ort::init_from(&candidate)));
+        let attempt =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| ort::init_from(&candidate)));
         match attempt {
             Ok(Ok(builder)) => {
                 let committed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -278,10 +279,7 @@ fn execution_providers_for(device: &str) -> (Vec<ep::ExecutionProviderDispatch>,
     {
         match device {
             "npu" | "gpu" => (
-                vec![
-                    ep::NNAPI::default().build(),
-                    ep::CPU::default().build(),
-                ],
+                vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
                 "nnapi+cpu",
             ),
             _ => (vec![ep::CPU::default().build()], "cpu"),
@@ -291,10 +289,7 @@ fn execution_providers_for(device: &str) -> (Vec<ep::ExecutionProviderDispatch>,
     {
         match device {
             "npu" | "gpu" => (
-                vec![
-                    ep::CoreML::default().build(),
-                    ep::CPU::default().build(),
-                ],
+                vec![ep::CoreML::default().build(), ep::CPU::default().build()],
                 "coreml+cpu",
             ),
             _ => (vec![ep::CPU::default().build()], "cpu"),
@@ -384,10 +379,7 @@ pub fn load_model(
         ep_label: ep_label.to_string(),
         model_path: model_path.to_string(),
     });
-    engine()
-        .lock()
-        .sessions
-        .insert(model_id.to_string(), entry);
+    engine().lock().sessions.insert(model_id.to_string(), entry);
 
     Ok(json!({
         "success": true,
@@ -448,9 +440,11 @@ fn frame_tensor_to_value(t: &FrameTensor) -> Result<ort::value::DynTensor, Strin
                 .map(|t| t.upcast())
                 .map_err(|e| e.to_string())
         }
-        DType::Int8 => Tensor::from_array((shape, t.bytes.iter().map(|b| *b as i8).collect::<Vec<i8>>()))
-            .map(|t| t.upcast())
-            .map_err(|e| e.to_string()),
+        DType::Int8 => {
+            Tensor::from_array((shape, t.bytes.iter().map(|b| *b as i8).collect::<Vec<i8>>()))
+                .map(|t| t.upcast())
+                .map_err(|e| e.to_string())
+        }
         DType::Uint8 => Tensor::from_array((shape, t.bytes.clone()))
             .map(|t| t.upcast())
             .map_err(|e| e.to_string()),
@@ -496,9 +490,12 @@ fn frame_tensor_to_value(t: &FrameTensor) -> Result<ort::value::DynTensor, Strin
                 .map(|t| t.upcast())
                 .map_err(|e| e.to_string())
         }
-        DType::Bool => Tensor::from_array((shape, t.bytes.iter().map(|b| *b != 0).collect::<Vec<bool>>()))
-            .map(|t| t.upcast())
-            .map_err(|e| e.to_string()),
+        DType::Bool => Tensor::from_array((
+            shape,
+            t.bytes.iter().map(|b| *b != 0).collect::<Vec<bool>>(),
+        ))
+        .map(|t| t.upcast())
+        .map_err(|e| e.to_string()),
     }
 }
 

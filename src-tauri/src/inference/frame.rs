@@ -313,8 +313,8 @@ mod tests {
     #[test]
     fn dtype_roundtrip() {
         for s in [
-            "float32", "float16", "float64", "int8", "uint8", "int16", "uint16", "int32",
-            "uint32", "int64", "uint64", "bool",
+            "float32", "float16", "float64", "int8", "uint8", "int16", "uint16", "int32", "uint32",
+            "int64", "uint64", "bool",
         ] {
             let dt = DType::from_str(s).unwrap();
             assert_eq!(dt.as_str(), s);
