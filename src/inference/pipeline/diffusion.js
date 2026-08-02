@@ -1,4 +1,6 @@
-const ort = require('onnxruntime-node');
+// Lazy/optional onnxruntime-node import (see preprocessing.js for rationale).
+let ort;
+try { ort = require('onnxruntime-node'); } catch (_) { ort = null; }
 const { MEL_DIM, COND_DIM, NPU_STATIC_SEQ_LEN } = require('./constants');
 const { createFloatTensor, outputToFloat32, disposeTensor, gpuDrainAdaptive, float32ToFloat16, batchFloat32ToFloat16 } = require('./utils');
 const { createSampler, DEFAULT_SOLVER } = require('./samplers');

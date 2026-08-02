@@ -1,18 +1,21 @@
 /**
  * SXSEditor-Pad Tauri Bridge
- * 
- * Provides window.electronAPI compatibility layer using Tauri v2 APIs.
- * This bridges the gap between Electron's ipcRenderer.invoke/on pattern
- * and Tauri's invoke/listen pattern.
+ *
+ * Exposes `window.electronAPI` (kept under that name for renderer compatibility)
+ * backed entirely by Tauri v2 APIs. There is no Electron here — every call maps
+ * to a `#[tauri::command]` in src-tauri/src/lib.rs or a Tauri plugin.
+ *
+ * Command naming: Tauri commands are invoked by their snake_case Rust function
+ * name, so this bridge translates the legacy camelCase / colon-separated
+ * channel names used by the renderer into the registered snake_case commands.
  */
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, emit } from '@tauri-apps/api/event';
-import { save, open, message, ask } from '@tauri-apps/plugin-dialog';
-import { writeTextFile, readTextFile, readFile, exists, mkdir } from '@tauri-apps/plugin-fs';
-import { open as openShell } from '@tauri-apps/plugin-shell';
+import { readFile } from '@tauri-apps/plugin-fs';
 
-// Event listeners storage
+// --------------------------- event helpers ---------------------------
+
 const _listeners = {};
 
 function onEvent(channel, callback) {
@@ -20,7 +23,7 @@ function onEvent(channel, callback) {
     callback(event.payload);
   });
   const cleanup = () => {
-    unlistenPromise.then(fn => fn && fn());
+    unlistenPromise.then(fn => fn && fn()).catch(() => {});
   };
   if (!_listeners[channel]) _listeners[channel] = [];
   _listeners[channel].push(cleanup);
@@ -31,100 +34,101 @@ function emitEvent(channel, payload) {
   emit(channel, payload);
 }
 
-// ==================== Tauri Bridge ====================
-const tauriBridge = {
-  // Dialog
-  showSaveDialog: (options) => invoke('plugin:dialog|save', { ...options }),
-  showOpenDialog: (options) => invoke('plugin:dialog|open', { ...options }),
+// --------------------------- Tauri bridge ---------------------------
 
-  // File operations
+const tauriBridge = {
+  // Dialog (plugin passthrough)
+  showSaveDialog: (options) => invoke('plugin:dialog|save', { options: options || {} }),
+  showOpenDialog: (options) => invoke('plugin:dialog|open', { options: options || {} }),
+
+  // File operations → Rust commands in lib.rs
   saveFile: (filePath, data) => invoke('save_file', { path: filePath, data }),
   readFile: (filePath) => invoke('read_file', { path: filePath }),
   readFileBuffer: (filePath) => invoke('read_file_buffer', { path: filePath }),
   fileExists: (filePath) => invoke('file_exists', { path: filePath }),
-  authorizePath: (filePath) => Promise.resolve(true),
+  authorizePath: () => Promise.resolve(true),
 
-  // SVS Pipeline
-  initSVSPipeline: () => invoke('svs:init'),
-  synthesizeSVS: (data) => invoke('svs:synthesize', { data }),
-  synthesizeMultiStreaming: (data) => invoke('svs:synthesizeMultiStreaming', { data }),
-  disposeSVSPipeline: () => invoke('svs:dispose'),
+  // SVS pipeline (legacy main-process inference → stubs; renderer uses WebNN)
+  initSVSPipeline: () => invoke('svs_init'),
+  synthesizeSVS: (data) => invoke('svs_synthesize', { data }),
+  synthesizeMultiStreaming: (data) => invoke('svs_synthesize_multi_streaming', { data }),
+  disposeSVSPipeline: () => invoke('svs_dispose'),
   onSVSProgress: (callback) => onEvent('svs:progress', (data) => callback({ progress: data })),
   onSVSChunkAudio: (callback) => onEvent('svs:chunk-audio', callback),
 
-  // Fragment SVS
-  getFragmentSVSSampleRate: () => invoke('fragment-svs:getSampleRate'),
-  initFragmentSVSPipeline: () => invoke('fragment-svs:init'),
+  // Fragment SVS (legacy → stubs)
+  getFragmentSVSSampleRate: () => invoke('fragment_svs_get_sample_rate'),
+  initFragmentSVSPipeline: () => invoke('fragment_svs_init'),
   synthesizeFragmentSVS: async (data) => {
-    const result = await invoke('fragment-svs:synthesize', { data });
-    if (result.error) throw new Error(result.error);
-    return result.data;
+    const result = await invoke('fragment_svs_synthesize', { data });
+    if (result && result.error) throw new Error(result.error);
+    return result && result.data;
   },
-  resolvePhonemes: (lyrics) => invoke('fragment-svs:resolvePhonemes', { lyrics }),
-  disposeFragmentSVSPipeline: () => invoke('fragment-svs:dispose'),
+  resolvePhonemes: (lyrics) => invoke('fragment_svs_resolve_phonemes', { lyrics }),
+  disposeFragmentSVSPipeline: () => invoke('fragment_svs_dispose'),
   onFragmentSVSProgress: (callback) => onEvent('fragment-svs:progress', (data) => callback({ progress: data })),
   onFragmentSVSChunkAudio: (callback) => onEvent('fragment-svs:chunk-audio', callback),
 
-  // Fragment Editor
-  openFragmentEditor: (data) => invoke('openFragmentEditor', { data }),
-  saveFragmentData: (fragmentId, data) => invoke('saveFragmentData', { fragmentId, data }),
-  saveFragmentDataSync: (fragmentId, data) => invoke('saveFragmentData', { fragmentId, data }),
-  getFragmentData: (fragmentId) => invoke('getFragmentData', { fragmentId }),
-  closeFragmentEditor: (fragmentId) => invoke('fragment:close', { fragmentId }),
-  closeAllFragmentEditors: () => invoke('fragment:closeAll'),
+  // Fragment editor persistence
+  openFragmentEditor: (data) => invoke('open_fragment_editor', { data }),
+  saveFragmentData: (fragmentId, data) => invoke('save_fragment_data', { fragmentId, data }),
+  saveFragmentDataSync: (fragmentId, data) => invoke('save_fragment_data', { fragmentId, data }),
+  getFragmentData: (fragmentId) => invoke('get_fragment_data', { fragmentId }),
+  closeFragmentEditor: (fragmentId) => invoke('fragment_close', { fragmentId }),
+  closeAllFragmentEditors: () => invoke('fragment_close_all'),
   onFragmentSaved: (callback) => onEvent('fragmentDataSaved', callback),
   onLoadFragment: (callback) => onEvent('loadFragment', callback),
-  updateFragmentBounds: (fragmentId, data) => invoke('updateFragmentBounds', { fragmentId, data }),
+  updateFragmentBounds: (fragmentId, data) => invoke('update_fragment_bounds', { fragmentId, data }),
   onFragmentBoundsChanged: (callback) => onEvent('fragmentBoundsChanged', callback),
-  updateProjectSettings: (projectData) => invoke('updateProjectSettings', { projectData }),
+  updateProjectSettings: (projectData) => invoke('update_project_settings', { projectData }),
   onProjectSettingsChanged: (callback) => onEvent('projectSettingsChanged', callback),
-  openSingerCreator: () => invoke('openSingerCreator'),
-  openSingerMarket: () => invoke('openSingerMarket'),
-  saveSingerFile: (singerData) => invoke('saveSingerFile', { singerData }),
+  openSingerCreator: () => invoke('open_singer_creator'),
+  openSingerMarket: () => invoke('open_singer_market'),
+  saveSingerFile: (singerData) => invoke('save_singer_file', { singerData }),
   onSingerCreatorSaveRequest: (callback) => onEvent('singer-creator:save-request', callback),
   onSingerCreatorSaveAsRequest: (callback) => onEvent('singer-creator:save-as-request', callback),
   onSingerCreated: (callback) => onEvent('singerCreated', callback),
 
-  // Audio Preprocess
-  openAudioPreprocess: (data) => invoke('openAudioPreprocess', { data }),
-  sendPreprocessData: (data) => invoke('sendPreprocessData', { data }),
+  // Audio preprocess
+  openAudioPreprocess: (data) => invoke('open_audio_preprocess', { data }),
+  sendPreprocessData: (data) => invoke('send_preprocess_data', { data }),
   onPreprocessDataSaved: (callback) => onEvent('preprocessDataSaved', callback),
   onLoadPreprocessData: (callback) => onEvent('loadPreprocessData', callback),
 
-  // Model Directory
+  // Model directory
   getModelDir: () => invoke('get_model_dir'),
 
-  // Pitch/MIDI extraction
-  extractF0: (data) => invoke('extractF0:onnx', { data }),
-  extractMidiRosvot: (data) => invoke('extractMidi:rosvot', { data }),
-  extractF0BasicPitch: (data) => invoke('extractF0:basicPitch', { data }),
-  importMidi: () => invoke('midi:import'),
-  importMidiMultiTrack: () => invoke('midi:importMultiTrack'),
-  resolvePath: (basePath, relativePath) => invoke('resolvePath', { basePath, relativePath }),
-  getDirName: (filePath) => invoke('getDirName', { filePath }),
+  // Pitch / MIDI extraction (renderer-side via WASM; Rust stubs return errors)
+  extractF0: (data) => invoke('extract_f0_onnx', { data }),
+  extractMidiRosvot: (data) => invoke('extract_midi_rosvot', { data }),
+  extractF0BasicPitch: (data) => invoke('extract_f0_basic_pitch', { data }),
+  importMidi: () => invoke('midi_import'),
+  importMidiMultiTrack: () => invoke('midi_import_multi_track'),
+  resolvePath: (basePath, relativePath) => invoke('resolve_path', { basePath, relativePath }),
+  getDirName: (filePath) => invoke('get_dir_name', { filePath }),
   showItemInFolder: (filePath) => invoke('show_item_in_folder', { path: filePath }),
 
-  // Settings
-  getDMLDevices: () => invoke('settings:getDMLDevices'),
-  getHardwareStatus: () => invoke('settings:getHardwareStatus'),
-  getCurrentHardware: () => invoke('settings:getCurrentHardware'),
-  getVocoderChunkFramesInfo: () => invoke('settings:getVocoderChunkFramesInfo'),
-  getVocoderChunkFramesTable: () => invoke('settings:getVocoderChunkFramesTable'),
+  // Settings / hardware info
+  getDMLDevices: () => invoke('settings_get_dml_devices'),
+  getHardwareStatus: () => invoke('settings_get_hardware_status'),
+  getCurrentHardware: () => invoke('settings_get_current_hardware'),
+  getVocoderChunkFramesInfo: () => invoke('settings_get_vocoder_chunk_frames_info'),
+  getVocoderChunkFramesTable: () => invoke('settings_get_vocoder_chunk_frames_table'),
   getSettings: () => invoke('get_settings'),
   saveSettings: (settings) => invoke('save_settings', { settings }),
-  checkModels: () => invoke('settings:check-models'),
+  checkModels: (precision) => invoke('settings_check_models', { precision: precision || null }),
   getAppVersion: () => invoke('get_app_version'),
-  validateDevices: () => invoke('settings:validateDevices'),
+  validateDevices: () => invoke('settings_validate_devices'),
 
-  // Audio
-  getAudioDevices: () => invoke('audio:getDevices'),
-  audioPlay: (audioData, options) => invoke('audio:play', { audioData, options }),
-  audioStop: () => invoke('audio:stop'),
-  audioGetPosition: () => invoke('audio:getPosition'),
-  audioIsAvailable: () => invoke('audio:isAvailable'),
+  // Audio (legacy → stubs; renderer uses WebAudio)
+  getAudioDevices: () => invoke('audio_get_devices'),
+  audioPlay: (audioData, options) => invoke('audio_play', { audioData, options: options || null }),
+  audioStop: () => invoke('audio_stop'),
+  audioGetPosition: () => invoke('audio_get_position'),
+  audioIsAvailable: () => invoke('audio_is_available'),
   onAudioEnded: (callback) => onEvent('audio:ended', callback),
 
-  // Model Download
+  // ---------------- Model download (INT8-NPU from ModelScope) ----------------
   onModelDownloadMissingFiles: (callback) => onEvent('model-download:missing-files', callback),
   onModelDownloadProgress: (callback) => onEvent('model-download:progress', callback),
   onModelDownloadFileStart: (callback) => onEvent('model-download:file-start', callback),
@@ -132,66 +136,85 @@ const tauriBridge = {
   onModelDownloadComplete: (callback) => onEvent('model-download:complete', callback),
   onModelDownloadError: (callback) => onEvent('model-download:error', callback),
   onModelDownloadPrecision: (callback) => onEvent('model-download:precision', callback),
-  onModelDownloadWindowClosed: (callback) => onEvent('model-download:window-closed', callback),
   onModelDownloadRevision: (callback) => onEvent('model-download:revision', callback),
-  modelDownloadStart: (precision, revision) => invoke('model-download:start', { precision, revision }),
-  modelDownloadCancel: () => invoke('model-download:cancel'),
-  modelDownloadCheck: () => invoke('model-download:check'),
-  modelDownloadChangeDir: () => invoke('model-download:change-dir'),
-  modelDownloadGetDir: () => invoke('model-download:get-dir'),
-  modelDownloadOpen: (precision) => invoke('model-download:open', { precision }),
-  modelDownloadDeleteAndRecheck: (precision) => invoke('model-download:delete-and-recheck', { precision }),
-  modelDownloadRecheck: (precision) => invoke('model-download:recheck', { precision }),
-  modelDownloadCheckJp: (precision) => invoke('model-download:check-jp', { precision }),
-  modelDownloadStartJp: (precision, revision) => invoke('model-download:start-jp', { precision, revision }),
-  modelDownloadCheckJpExists: () => invoke('model-download:check-jp-exists'),
-  modelDownloadCheckSifigan: () => invoke('model-download:check-sifigan'),
-  modelDownloadStartSifigan: (revision) => invoke('model-download:start-sifigan', { revision }),
-  modelDownloadUnloadSifigan: () => invoke('model-download:unload-sifigan'),
-  modelDownloadCheckVersion: (precision) => invoke('model-download:check-version', { precision }),
-  modelDownloadCheckJpVersion: (precision) => invoke('model-download:check-jp-version', { precision }),
-  modelDownloadCheckSifiganVersion: () => invoke('model-download:check-sifigan-version'),
-  modelDownloadCheckAllVersions: (precision) => invoke('model-download:check-all-versions', { precision }),
-  modelDownloadUpdate: (precision, revision) => invoke('model-download:update', { precision, revision }),
-  modelDownloadUpdateJp: (precision, revision) => invoke('model-download:update-jp', { precision, revision }),
-  modelDownloadUpdateSifigan: (revision) => invoke('model-download:update-sifigan', { revision }),
-  modelDownloadListVersions: (precision) => invoke('model-download:list-versions', { precision }),
-  modelDownloadListJpVersions: (precision) => invoke('model-download:list-jp-versions', { precision }),
-  modelDownloadListSifiganVersions: () => invoke('model-download:list-sifigan-versions'),
-  modelDownloadOpenExternal: (url) => invoke('model-download:open-external', { url }),
+  onModelDownloadWindowClosed: (callback) => onEvent('model-download:window-closed', callback),
+  modelDownloadStart: (precision, revision) => invoke('model_download_start', { precision, revision }),
+  modelDownloadCancel: () => invoke('model_download_cancel'),
+  modelDownloadCheck: () => invoke('model_download_check'),
+  modelDownloadChangeDir: () => invoke('model_download_change_dir'),
+  modelDownloadGetDir: () => invoke('model_download_get_dir'),
+  modelDownloadOpen: (precision) => invoke('model_download_open', { precision }),
+  modelDownloadDeleteAndRecheck: (precision) => invoke('model_download_delete_and_recheck', { precision }),
+  modelDownloadRecheck: (precision) => invoke('model_download_recheck', { precision }),
+  modelDownloadCheckJp: (precision) => invoke('model_download_check_jp', { precision }),
+  modelDownloadStartJp: (precision, revision) => invoke('model_download_start_jp', { precision, revision }),
+  modelDownloadCheckJpExists: () => invoke('model_download_check_jp_exists'),
+  modelDownloadCheckSifigan: () => invoke('model_download_check_sifigan'),
+  modelDownloadStartSifigan: (revision) => invoke('model_download_start_sifigan', { revision }),
+  modelDownloadUnloadSifigan: () => invoke('model_download_unload_sifigan'),
+  modelDownloadCheckVersion: (precision) => invoke('model_download_check_version', { precision }),
+  modelDownloadCheckJpVersion: (precision) => invoke('model_download_check_jp_version', { precision }),
+  modelDownloadCheckSifiganVersion: () => invoke('model_download_check_sifigan_version'),
+  modelDownloadCheckAllVersions: (precision) => invoke('model_download_check_all_versions', { precision }),
+  modelDownloadUpdate: (precision, revision) => invoke('model_download_update', { precision, revision }),
+  modelDownloadUpdateJp: (precision, revision) => invoke('model_download_update_jp', { precision, revision }),
+  modelDownloadUpdateSifigan: (revision) => invoke('model_download_update_sifigan', { revision }),
+  modelDownloadListVersions: (precision) => invoke('model_download_list_versions', { precision }),
+  modelDownloadListJpVersions: (precision) => invoke('model_download_list_jp_versions', { precision }),
+  modelDownloadListSifiganVersions: () => invoke('model_download_list_sifigan_versions'),
+  modelDownloadOpenExternal: (url) => invoke('model_download_open_external', { url }),
 
-  // SVS JP Model
-  svsCheckJpModels: () => invoke('svs:checkJpModels'),
+  // SVS JP model check
+  svsCheckJpModels: () => invoke('svs_check_jp_models'),
 
   // Locale
-  saveLocale: (locale) => invoke('save-locale', { locale }),
-  getLocale: () => invoke('get-locale'),
-  reloadMainWindow: () => invoke('reload-main-window'),
+  saveLocale: (locale) => invoke('save_locale', { locale }),
+  getLocale: () => invoke('get_locale'),
+  reloadMainWindow: () => invoke('reload_main_window'),
   onLocaleChanged: (callback) => onEvent('locale-changed', callback),
 
-  // Window
-  setDirty: (dirty) => invoke('set-dirty', { dirty }),
+  // Window / menu
+  setDirty: (dirty) => invoke('set_dirty', { dirty }),
   onCloseConfirm: (callback) => onEvent('close-confirm', callback),
-  closeConfirmed: () => invoke('close-confirmed'),
+  closeConfirmed: () => invoke('close_confirmed'),
   onMainMenuSaveRequest: (callback) => onEvent('main-menu:save-request', callback),
   onMainMenuSaveAsRequest: (callback) => onEvent('main-menu:save-as-request', callback),
 
-  // Resource Manager
-  resmgrOpen: () => invoke('resmgr:open'),
-  resmgrGetGPUInfo: () => invoke('resmgr:getGPUInfo'),
-  resmgrGetModelGroups: () => invoke('resmgr:getModelGroups'),
-  resmgrLoadModel: (groupId, modelId) => invoke('resmgr:loadModel', { groupId, modelId }),
-  resmgrUnloadModel: (groupId, modelId) => invoke('resmgr:unloadModel', { groupId, modelId }),
-  resmgrLoadGroup: (groupId) => invoke('resmgr:loadGroup', { groupId }),
-  resmgrUnloadGroup: (groupId) => invoke('resmgr:unloadGroup', { groupId }),
+  // Resource manager
+  resmgrOpen: () => invoke('resmgr_open'),
+  resmgrGetGPUInfo: () => invoke('resmgr_get_gpu_info'),
+  resmgrGetModelGroups: () => invoke('resmgr_get_model_groups'),
+  resmgrLoadModel: (groupId, modelId) => invoke('resmgr_load_model', { groupId, modelId }),
+  resmgrUnloadModel: (groupId, modelId) => invoke('resmgr_unload_model', { groupId, modelId }),
+  resmgrLoadGroup: (groupId) => invoke('resmgr_load_group', { groupId }),
+  resmgrUnloadGroup: (groupId) => invoke('resmgr_unload_group', { groupId }),
 
-  // WebNN / NPU API
-  webnnDetectNPU: () => invoke('webnn:detectNPU'),
-  webnnLoadModel: (modelId, modelPath, options) => invoke('webnn:loadModel', { modelId, modelPath, options }),
-  webnnUnloadModel: (modelId) => invoke('webnn:unloadModel', { modelId }),
-  webnnRunInference: (modelId, inputs) => invoke('webnn:runInference', { modelId, inputs }),
-  webnnGetStatus: () => invoke('webnn:getStatus'),
-  webnnReadModelFile: (filePath) => invoke('webnn:readModelFile', { filePath }),
+  // ---------------- WebNN / NPU ----------------
+  // Inference runs in the renderer via onnxruntime-web. `webnnReadModelFile`
+  // reads model bytes; for large files we prefer the fs plugin (returns a
+  // Uint8Array directly, avoiding JSON serialization of a byte array).
+  webnnDetectNPU: () => invoke('webnn_detect_npu'),
+  webnnLoadModel: (modelId, modelPath, options) => invoke('webnn_load_model', { modelId, modelPath, options: options || null }),
+  webnnUnloadModel: (modelId) => invoke('webnn_unload_model', { modelId }),
+  webnnRunInference: (modelId, inputs) => invoke('webnn_run_inference', { modelId, inputs }),
+  webnnGetStatus: () => invoke('webnn_get_status'),
+  webnnReadModelFile: async (filePath) => {
+    try {
+      const bytes = await readFile(filePath);
+      return { success: true, data: bytes.buffer };
+    } catch (e) {
+      // Fallback to the Rust command (handles paths outside the fs scope).
+      try {
+        const result = await invoke('webnn_read_model_file', { filePath });
+        if (result && result.success && Array.isArray(result.data)) {
+          return { success: true, data: new Uint8Array(result.data).buffer };
+        }
+        return result || { success: false, error: String(e) };
+      } catch (e2) {
+        return { success: false, error: e2.message || String(e2) };
+      }
+    }
+  },
   onWebnnDetectNPURequest: (callback) => onEvent('webnn:detectNPU:request', callback),
   onWebnnLoadModelRequest: (callback) => onEvent('webnn:loadModel:request', callback),
   onWebnnUnloadModelRequest: (callback) => onEvent('webnn:unloadModel:request', callback),
@@ -203,56 +226,58 @@ const tauriBridge = {
   webnnProgress: (progressChannel, data) => emitEvent(progressChannel, data),
   webnnChunk: (chunkChannel, data) => emitEvent(chunkChannel, data),
 
-  // Theme API
+  // ---------------- Theme ----------------
   themeAPI: {
-    bootstrap: () => invoke('theme:bootstrap'),
-    list: () => invoke('theme:list'),
-    get: (themeId) => invoke('theme:get', { themeId }),
-    current: (options) => invoke('theme:current', { options: options || {} }),
-    apply: (themeId, options) => invoke('theme:apply', { themeId, options: options || {} }),
-    save: (themeObj) => invoke('theme:save', { themeObj }),
-    delete: (themeId) => invoke('theme:delete', { themeId }),
-    import: () => invoke('theme:import'),
-    export: (themeId) => invoke('theme:export', { themeId }),
-    reset: () => invoke('theme:reset'),
+    bootstrap: () => invoke('theme_bootstrap'),
+    list: () => invoke('theme_list'),
+    get: (themeId) => invoke('theme_get', { themeId }),
+    current: (options) => invoke('theme_current', { options: options || null }),
+    apply: (themeId, options) => invoke('theme_apply', { themeId, options: options || null }),
+    save: (themeObj) => invoke('theme_save', { themeObj }),
+    delete: (themeId) => invoke('theme_delete', { themeId }),
+    import: () => invoke('theme_import'),
+    export: (themeId) => invoke('theme_export', { themeId }),
+    reset: () => invoke('theme_reset'),
     onChanged: (callback) => onEvent('theme:changed', callback),
     onListChanged: (callback) => onEvent('theme:list-changed', callback),
   },
 
-  // Update API
+  // ---------------- Update ----------------
   updateAPI: {
-    checkNow: () => invoke('update:check-now'),
-    getStatus: () => invoke('update:get-status'),
-    skipVersion: (version) => invoke('update:skip-version', { version }),
-    dontRemind: () => invoke('update:dont-remind'),
-    openDownloadPage: (url) => invoke('update:open-download-page', { url }),
-    openModelDownload: () => invoke('update:open-model-download'),
-    downloadInstaller: (url, version) => invoke('update:download-installer', { url, version }),
-    cancelDownload: () => invoke('update:cancel-download'),
-    installInstaller: (filePath) => invoke('update:install-installer', { filePath }),
+    checkNow: () => invoke('update_check_now'),
+    getStatus: () => invoke('update_get_status'),
+    skipVersion: (version) => invoke('update_skip_version', { version }),
+    dontRemind: () => invoke('update_dont_remind'),
+    openDownloadPage: (url) => invoke('update_open_download_page', { url }),
+    openModelDownload: () => invoke('update_open_model_download'),
+    downloadInstaller: (url, version) => invoke('update_download_installer', { url, version }),
+    cancelDownload: () => invoke('update_cancel_download'),
+    installInstaller: (filePath) => invoke('update_install_installer', { filePath }),
     onDownloadProgress: (callback) => onEvent('update:download-progress', callback),
     onDownloadComplete: (callback) => onEvent('update:download-complete', callback),
     onDownloadError: (callback) => onEvent('update:download-error', callback),
     onNotificationShow: (callback) => onEvent('update:notification-show', callback),
   },
 
-  // Singer Market API
+  // ---------------- Singer market ----------------
   singerMarket: {
-    login: (username, password) => invoke('singer-market:login', { username, password }),
-    register: (username, password) => invoke('singer-market:register', { username, password }),
-    logout: () => invoke('singer-market:logout'),
-    me: () => invoke('singer-market:me'),
-    list: (params) => invoke('singer-market:list', { params }),
-    fileDetail: (fileId) => invoke('singer-market:file-detail', { fileId }),
-    tags: (params) => invoke('singer-market:tags', { params }),
-    upload: (payload) => invoke('singer-market:upload', { payload }),
-    download: (fileId) => invoke('singer-market:download', { fileId }),
-    pickFile: () => invoke('singer-market:pick-file'),
-    pickSavePath: (suggestedName) => invoke('singer-market:pick-save-path', { suggestedName }),
+    login: (username, password) => invoke('singer_market_login', { username, password }),
+    register: (username, password) => invoke('singer_market_register', { username, password }),
+    logout: () => invoke('singer_market_logout'),
+    me: () => invoke('singer_market_me'),
+    list: (params) => invoke('singer_market_list', { params }),
+    fileDetail: (fileId) => invoke('singer_market_file_detail', { fileId }),
+    tags: (params) => invoke('singer_market_tags', { params }),
+    upload: (payload) => invoke('singer_market_upload', { payload }),
+    download: (fileId) => invoke('singer_market_download', { fileId }),
+    pickFile: () => invoke('singer_market_pick_file'),
+    pickSavePath: (suggestedName) => invoke('singer_market_pick_save_path', { suggestedName: suggestedName || null }),
   },
 };
 
-// Export the bridge
+// Export the bridge under the legacy `electronAPI` name so existing renderer
+// code (`window.electronAPI.*`) works without modification. The implementation
+// is 100% Tauri — there is no Electron runtime involved.
 window.electronAPI = tauriBridge;
 
 export default tauriBridge;

@@ -1,5 +1,7 @@
 const path = require('node:path');
-const ort = require('onnxruntime-node');
+// Lazy/optional onnxruntime-node import (see pipeline/preprocessing.js for rationale).
+let ort;
+try { ort = require('onnxruntime-node'); } catch (_) { ort = null; }
 const { resampleAudio } = require('../utils/resampleAudio');
 const { buildSessionOptions } = require('./shared/ortOptions');
 

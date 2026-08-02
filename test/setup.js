@@ -70,15 +70,16 @@ if (typeof global.SVGElement === 'undefined') {
   global.SVGElement = dom.window.SVGElement;
 }
 
-// Global electron mock for test environment
-// Many source files require('electron') at load time. We provide a minimal stub
-// so tests can require those modules without crashing.
+// Module loader mock for test environment.
+// The Tauri refactor removed all Electron main-process code, so no source file
+// requires('electron') anymore. We still mock onnxruntime-node because several
+// inference/pipeline reference modules load it at module top-level; in CI
+// (--ignore-scripts) the native binding is absent, and these modules are kept
+// only as tested pure-logic reference implementations (not bundled into the
+// renderer, which uses onnxruntime-web via src/inference/webnn).
 const Module = require('module');
 const _originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {
-  // onnxruntime-node requires native binary download (postinstall script).
-  // In CI with --ignore-scripts, the JS files exist but the native binding
-  // fails. Provide a mock so tests that import the pipeline can load.
   if (request === 'onnxruntime-node' || request === 'onnxruntime-common') {
     const env = { logLevel: 'error', debug: false };
     return {
@@ -92,43 +93,6 @@ Module._load = function (request, parent, isMain) {
         this.dims = dims;
         this.size = data ? data.length : 0;
       },
-    };
-  }
-  if (request === 'electron') {
-    return {
-      app: {
-        getPath: () => '/tmp/sxseditor-test',
-        getVersion: () => '0.0.0-test',
-        isPackaged: false,
-        on: () => {},
-        quit: () => {},
-      },
-      ipcMain: {
-        on: () => {},
-        handle: () => {},
-        handleOnce: () => {},
-        removeListener: () => {},
-      },
-      BrowserWindow: {
-        getAllWindows: () => [],
-        getFocusedWindow: () => null,
-      },
-      dialog: {
-        showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
-        showSaveDialog: () => Promise.resolve({ canceled: true, filePath: '' }),
-      },
-      shell: { openExternal: () => Promise.resolve() },
-      contextBridge: { exposeInMainWorld: () => {} },
-      ipcRenderer: {
-        on: () => {},
-        send: () => {},
-        invoke: () => Promise.resolve(),
-        removeListener: () => {},
-      },
-      session: { defaultSession: null },
-      net: { request: () => {} },
-      Menu: { buildFromTemplate: () => ({ popup: () => {} }) },
-      protocol: { registerFileProtocol: () => {} },
     };
   }
   return _originalLoad.apply(this, arguments);

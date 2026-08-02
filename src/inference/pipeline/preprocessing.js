@@ -1,4 +1,10 @@
-const ort = require('onnxruntime-node');
+// Lazy/optional onnxruntime-node import. This module is the legacy Node-side
+// pipeline (kept as a reference implementation exercised by tests); the live
+// renderer pipeline lives in src/inference/webnn and uses onnxruntime-web.
+// Making the require optional lets this file load in environments without the
+// native binding (e.g. webpack traversal, CI without the mock).
+let ort;
+try { ort = require('onnxruntime-node'); } catch (_) { ort = null; }
 const { SAMPLE_RATE, HOP_SIZE, MEL_DIM, EMBED_DIM, COND_DIM, F0_BIN, F0_MIN, NPU_STATIC_SEQ_LEN } = require('./constants');
 const { createFloatTensor, outputToFloat32, disposeTensor } = require('./utils');
 const durationStats = require('./durationStats');

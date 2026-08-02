@@ -22,3 +22,16 @@ tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# HTTP downloads of model files from ModelScope.
+# rustls-tls avoids native OpenSSL on Android/iOS; `stream` enables chunked
+# download progress reporting back to the renderer.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+tokio = { version = "1", features = ["fs", "io-util", "sync", "rt"] }
+futures-util = "0.3"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

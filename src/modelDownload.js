@@ -12,7 +12,7 @@ let lastOverallDownloaded = 0;
 let lastSpeedTime = 0;
 let isDownloading = false;
 let renderedFileIds = [];
-let currentPrecision = 'fp32';
+let currentPrecision = 'int8-npu';
 let currentRevision = 'latest'; // selected revision: 'latest' = auto-pick newest tag, or a specific tag (e.g. 'v1')
 let availableTags = []; // tags fetched from ModelScope (branches NOT shown)
 let currentVersionInfo = null; // { updateAvailable, localVersion, latestVersion, hasModelFiles, localRevision }
@@ -399,7 +399,7 @@ window.electronAPI.onModelDownloadMissingFiles((files) => {
 });
 
 window.electronAPI.onModelDownloadPrecision((precision) => {
-  const newPrecision = precision || 'fp32';
+  const newPrecision = precision || 'int8-npu';
   const changed = newPrecision !== currentPrecision;
   currentPrecision = newPrecision;
   const radio = document.querySelector(`input[name="modelPrecision"][value="${currentPrecision}"]`);
@@ -535,7 +535,7 @@ window.electronAPI.onModelDownloadError((data) => {
 
 document.getElementById('startBtn').addEventListener('click', async () => {
   const selectedRadio = document.querySelector('input[name="modelPrecision"]:checked');
-  currentPrecision = selectedRadio ? selectedRadio.value : 'fp16';
+  currentPrecision = selectedRadio ? selectedRadio.value : 'int8-npu';
 
   // When the target revision is v0 or null (no real version), warn the user
   // that v0 and legacy content are identical before starting the download.
