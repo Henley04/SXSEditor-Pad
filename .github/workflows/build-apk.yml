@@ -243,6 +243,7 @@ jobs:
         with:
           pattern: SXSEditor-Pad-*.apk
           path: apks/
+          merge-multiple: true
 
       - name: Create Release
         uses: ncipollo/release-action@v1
