@@ -53,18 +53,26 @@ jobs:
           echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
   build-apk:
-    name: Build Android APK
+    name: Build APK (${{ matrix.abi }})
     needs: build-web
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        arch: [aarch64, armv7, x86_64]
         include:
+          # `arch` is the short Tauri --target name (the CLI only accepts
+          # aarch64 / armv7 / i686 / x86_64 — full triples like
+          # aarch64-linux-android are REJECTED).
+          # `triple` is the Rust target used by rustup / dtolnay/rust-toolchain.
+          # `abi` is the Android ABI folder name used in the output APK path.
           - arch: aarch64
+            triple: aarch64-linux-android
             abi: arm64-v8a
           - arch: armv7
+            triple: armv7-linux-androideabi
             abi: armeabi-v7a
           - arch: x86_64
+            triple: x86_64-linux-android
             abi: x86_64
     steps:
       - uses: actions/checkout@v4
@@ -86,7 +94,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+          targets: ${{ matrix.triple }}
 
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
@@ -105,39 +113,72 @@ jobs:
             echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
           fi
 
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk
-
       - name: Install Android build deps
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
 
-      - name: Install Android targets for Rust
-        run: |
-          rustup target add aarch64-linux-android
-          rustup target add armv7-linux-androideabi
-          rustup target add x86_64-linux-android
+      - name: Ensure Rust Android target
+        run: rustup target add ${{ matrix.triple }}
 
       - name: Initialize Tauri Android project
-        run: |
-          npx tauri android init --ci 2>/dev/null || true
+        run: npx tauri android init --ci 2>/dev/null || true
 
-      - name: Build Android APK (${{ matrix.abi }})
-        run: |
-          npx tauri android build --target ${{ matrix.arch }} --apk --ci
+      - name: Build per-ABI APK (${{ matrix.abi }})
+        # Use the SHORT arch name for --target (full triples are rejected by
+        # the Tauri CLI). `--split-per-abi` makes Gradle emit ABI-suffixed
+        # APKs (e.g. app-arm64-v8a-release.apk) so we can pick the right one.
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.NDK_HOME }}
+        run: npx tauri android build --target ${{ matrix.arch }} --split-per-abi --apk --ci
 
-      - name: Locate APK
+      - name: Verify APK is installable (aapt dump badging)
+        # Guard against shipping a malformed APK. Abort early if aapt can't
+        # parse it (this is what causes "package info is null" on install).
+        run: |
+          set -e
+          AAPT=$(find $ANDROID_HOME -name aapt2 -type f 2>/dev/null | head -1)
+          if [ -z "$AAPT" ]; then AAPT=$(find $ANDROID_HOME -name aapt -type f 2>/dev/null | head -1); fi
+          APK=$(find src-tauri/gen/android -name "*-${{ matrix.abi }}-release.apk" -type f 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then
+            APK=$(find src-tauri/gen/android -name "*release*.apk" -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$APK" ]; then
+            echo "ERROR: no APK produced for ${{ matrix.abi }}" >&2
+            exit 1
+          fi
+          echo "Verifying: $APK"
+          if [ -n "$AAPT" ]; then
+            BADGE=$("$AAPT" dump badging "$APK" 2>/dev/null | head -1 || true)
+            echo "badging: $BADGE"
+            if ! echo "$BADGE" | grep -q "package:"; then
+              echo "ERROR: APK is not parseable (package info is null)" >&2
+              exit 1
+            fi
+          else
+            echo "aapt not found, skipping badging verification"
+          fi
+
+      - name: Locate APK (per-arch)
         id: apk
         run: |
-          APK_PATH=$(find src-tauri/gen/android -name "*.apk" -type f | head -1)
+          set -e
+          # Prefer ABI-suffixed APK; fall back to any release APK.
+          APK_PATH=$(find src-tauri/gen/android -name "*-${{ matrix.abi }}-release.apk" -type f 2>/dev/null | head -1)
           if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find . -name "*.apk" -type f | head -1)
+            APK_PATH=$(find src-tauri/gen/android -name "*release*.apk" -type f 2>/dev/null | head -1)
           fi
-          echo "path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find . -name "*.apk" -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK found for ${{ matrix.abi }}" >&2
+            exit 1
+          fi
+          echo "Found APK: $APK_PATH"
+          cp "$APK_PATH" "SXSEditor-Pad-${{ matrix.abi }}.apk"
+          echo "path=SXSEditor-Pad-${{ matrix.abi }}.apk" >> $GITHUB_OUTPUT
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -170,7 +211,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
 
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
@@ -189,39 +230,81 @@ jobs:
             echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
           fi
 
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk
-
       - name: Install Android build deps
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
 
-      - name: Install Android targets for Rust
+      - name: Ensure all Rust Android targets
         run: |
           rustup target add aarch64-linux-android
           rustup target add armv7-linux-androideabi
           rustup target add x86_64-linux-android
 
       - name: Initialize Tauri Android project
-        run: |
-          npx tauri android init --ci 2>/dev/null || true
+        run: npx tauri android init --ci 2>/dev/null || true
 
       - name: Build Universal APK (all architectures)
-        run: |
-          npx tauri android build --apk --ci
+        # Omit --target entirely so Tauri builds ALL Android targets (the
+        # default). Omit --split-per-abi so Gradle emits a SINGLE universal
+        # APK bundling every ABI — this is what fixes the "package info is
+        # null" install error (previously an ABI-incompatible split APK was
+        # shipped as "universal"). `all` is NOT a valid --target value.
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.NDK_HOME }}
+        run: npx tauri android build --apk --ci
+
+      - name: Verify Universal APK is installable (aapt dump badging)
+        run: |
+          set -e
+          AAPT=$(find $ANDROID_HOME -name aapt2 -type f 2>/dev/null | head -1)
+          if [ -z "$AAPT" ]; then AAPT=$(find $ANDROID_HOME -name aapt -type f 2>/dev/null | head -1); fi
+          APK=$(find src-tauri/gen/android -name "*-universal-release.apk" -type f 2>/dev/null | head -1)
+          if [ -z "$APK" ]; then
+            APK=$(find src-tauri/gen/android -name "app-release.apk" -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$APK" ]; then
+            APK=$(find src-tauri/gen/android -name "*release*.apk" -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$APK" ]; then
+            echo "ERROR: no universal APK produced" >&2
+            exit 1
+          fi
+          echo "Verifying: $APK"
+          if [ -n "$AAPT" ]; then
+            BADGE=$("$AAPT" dump badging "$APK" 2>/dev/null | head -1 || true)
+            echo "badging: $BADGE"
+            if ! echo "$BADGE" | grep -q "package:"; then
+              echo "ERROR: universal APK is not parseable (package info is null)" >&2
+              exit 1
+            fi
+          else
+            echo "aapt not found, skipping badging verification"
+          fi
 
       - name: Locate Universal APK
         id: apk
         run: |
-          APK_PATH=$(find src-tauri/gen/android -name "*.apk" -type f | head -1)
+          set -e
+          # Gradle "universal" APK → fallback to app-release.apk → any release APK.
+          APK_PATH=$(find src-tauri/gen/android -name "*-universal-release.apk" -type f 2>/dev/null | head -1)
           if [ -z "$APK_PATH" ]; then
-            APK_PATH=$(find . -name "*.apk" -type f | head -1)
+            APK_PATH=$(find src-tauri/gen/android -name "app-release.apk" -type f 2>/dev/null | head -1)
           fi
-          echo "path=$APK_PATH" >> $GITHUB_OUTPUT
-          echo "name=$(basename "$APK_PATH")" >> $GITHUB_OUTPUT
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find src-tauri/gen/android -name "*release*.apk" -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$APK_PATH" ]; then
+            APK_PATH=$(find . -name "*.apk" -type f 2>/dev/null | head -1)
+          fi
+          if [ -z "$APK_PATH" ]; then
+            echo "No universal APK found" >&2
+            exit 1
+          fi
+          echo "Found Universal APK: $APK_PATH"
+          cp "$APK_PATH" "SXSEditor-Pad-universal.apk"
+          echo "path=SXSEditor-Pad-universal.apk" >> $GITHUB_OUTPUT
 
       - name: Upload Universal APK artifact
         uses: actions/upload-artifact@v4
@@ -243,22 +326,26 @@ jobs:
         with:
           pattern: SXSEditor-Pad-*.apk
           path: apks/
+          merge-multiple: true
 
-      - name: Flatten and rename APK files
+      - name: Normalize APK filenames
         run: |
-          find apks -name "*.apk" -type f -exec mv -t apks/ {} + 2>/dev/null || \
-          find apks -name "*.apk" -type f -exec mv {} apks/ \;
-          rmdir apks/*/ 2>/dev/null || true
-          cd apks
-          for f in *.apk; do
-            case "$f" in
-              *universal*) mv -n "$f" "SXSEditor-Pad-universal.apk" 2>/dev/null || true ;;
-              *arm64*v8a*) mv -n "$f" "SXSEditor-Pad-arm64-v8a.apk" 2>/dev/null || true ;;
-              *arm*v7a*)   mv -n "$f" "SXSEditor-Pad-armeabi-v7a.apk" 2>/dev/null || true ;;
-              *x86_64*)    mv -n "$f" "SXSEditor-Pad-x86_64.apk" 2>/dev/null || true ;;
+          set -e
+          mkdir -p release-assets
+          ls -la apks/ || true
+          for f in apks/*.apk; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f")
+            case "$base" in
+              *universal*)         cp -f "$f" release-assets/SXSEditor-Pad-universal.apk ;;
+              *arm64-v8a*|*arm64*) cp -f "$f" release-assets/SXSEditor-Pad-arm64-v8a.apk ;;
+              *armeabi-v7a*|*armv7*) cp -f "$f" release-assets/SXSEditor-Pad-armeabi-v7a.apk ;;
+              *x86_64*)            cp -f "$f" release-assets/SXSEditor-Pad-x86_64.apk ;;
+              *)                   cp -f "$f" release-assets/"$base" ;;
             esac
           done
-          ls -la
+          echo "=== Release assets ==="
+          ls -la release-assets/
 
       - name: Create Release
         uses: ncipollo/release-action@v1
@@ -278,6 +365,6 @@ jobs:
 
             ### Changelog
             See the [commits](https://github.com/Henley04/SXSEditor-Pad/commits/master) for detailed changes.
-          artifacts: "apks/*.apk"
+          artifacts: "release-assets/*.apk"
           makeLatest: true
           generateReleaseNotes: true

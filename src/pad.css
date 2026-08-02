@@ -1,16 +1,49 @@
 /* ============================================
-   SXSEditor-Pad - Touch-friendly Pad styles
-   Mobile-first responsive design for tablets
+   SXSEditor-Pad - Touch-first Pad styles
+   Mobile-first responsive design for tablets.
+   Touch is the primary input; mouse/trackpad keep
+   full hover/fine-pointer behaviour via media queries.
    ============================================ */
 
-/* Base touch-friendly adjustments */
 :root {
+  /* Minimum touch target per Apple HIG / Material = 44-48dp. */
   --touch-target-min: 44px;
   --touch-target-min-w: 48px;
-  --safe-area-inset: env(safe-area-inset-bottom, 0px);
+  --touch-target-pad: 52px;
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --tap-feedback: rgba(255, 255, 255, 0.14);
 }
 
-/* Ensure minimum touch target sizes for all interactive elements */
+/* ---------- Global touch defaults ---------- */
+
+/* Kill the 300ms click delay and iOS callout/selection on touch. */
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+/* Inputs/editables must remain selectable for typing. */
+input, textarea, select, [contenteditable="true"], [contenteditable=""] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
+/* Suppress the browser context menu on long-press for UI chrome; canvases
+   handle their own gesture detection. The renderer may re-enable it per
+   element via `touch-action` / event listeners if needed. */
+canvas, .no-context-menu {
+  -webkit-touch-callout: none;
+}
+
+/* ---------- Minimum touch targets ---------- */
+
 button,
 .btn-toolbar,
 .toolbar-group button,
@@ -18,248 +51,290 @@ input[type="checkbox"] + label,
 input[type="radio"] + label,
 select,
 .sidebar-item,
-.theme-actions button {
+.theme-actions button,
+.list-item,
+.menu-item,
+.tab-item {
   min-height: var(--touch-target-min);
   min-width: var(--touch-target-min-w);
 }
 
-/* Prevent text selection on touch devices */
-* {
-  -webkit-tap-highlight-color: transparent;
-  -webkit-touch-callout: none;
-  user-select: none;
-}
+/* ---------- Toolbar ---------- */
 
-/* Allow text selection in input fields */
-input, textarea, select, [contenteditable] {
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-/* Toolbar - adapt for touch */
 #toolbar {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: none;
   touch-action: pan-x;
+  /* Keep toolbar clear of the status bar / notch on tablets in landscape. */
+  padding-top: var(--safe-area-top);
+  padding-left: var(--safe-area-left);
+  padding-right: var(--safe-area-right);
 }
 
 .toolbar-group button {
-  padding: 8px 14px;
-  font-size: 14px;
-  border-radius: 8px;
-  margin: 2px 4px;
+  padding: 10px 16px;
+  font-size: 15px;
+  border-radius: 10px;
+  margin: 3px 5px;
+  /* Generous hit area without enlarging the visual button. */
+  position: relative;
 }
 
-/* Responsive toolbar */
+/* Extend the clickable area of compact icon buttons via a pseudo-element so
+   the visual size stays small but the touch target meets the 44px minimum. */
+.toolbar-group button::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: inherit;
+}
+
+/* ---------- Responsive toolbar ---------- */
+
 @media (max-width: 900px) {
-  #toolbar {
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-  .toolbar-group {
-    flex-wrap: wrap;
-  }
-  .toolbar-divider {
-    display: none;
-  }
+  #toolbar { flex-wrap: wrap; gap: 4px; }
+  .toolbar-group { flex-wrap: wrap; }
+  .toolbar-divider { display: none; }
+  .toolbar-group button { padding: 8px 12px; font-size: 14px; }
 }
 
-/* Slider/range inputs - larger track for touch */
+@media (max-width: 600px) {
+  .toolbar-group button { padding: 7px 10px; font-size: 13px; margin: 2px 3px; }
+}
+
+/* ---------- Range sliders (large, touch-friendly) ---------- */
+
 input[type="range"] {
-  height: 8px;
-  min-height: 8px;
+  height: 28px;          /* full touch height for the track hit area */
+  min-height: 28px;
+  padding: 10px 0;       /* vertical room so the thumb is easy to grab */
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
 }
 input[type="range"]::-webkit-slider-thumb {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
+  margin-top: -11px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
 }
 
-/* Main content area */
-#main-content {
+/* ---------- Main content / scroll regions ---------- */
+
+#main-content,
+#singer-panel,
+#singer-list,
+#fragment-timeline,
+.settings-layout,
+.settings-sidebar,
+.sidebar-nav,
+.theme-editor-panel,
+.fragment-editor-container,
+.audio-preprocess-container,
+.singer-creator-container,
+.singer-market-container,
+.rm-container,
+.dialog-content {
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
-/* Singer panel */
-#singer-panel {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-#singer-list {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Fragment timeline */
-#fragment-timeline {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Canvas elements - enable touch interactions */
+/* Canvases own their gesture handling (piano roll, timeline, fragment lanes):
+   disable browser panning/zooming so pointer events reach the app. */
 canvas {
   touch-action: none;
 }
 
-/* Settings page touch optimization */
-.settings-layout {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
+/* ---------- Splash / overlays ---------- */
 
-.settings-sidebar {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Model download page */
-.header {
-  padding: 16px;
-}
-
-/* Splash screen */
-#splash-root {
+#splash-root,
+.dialog-overlay,
+.theme-toast {
   touch-action: none;
 }
 
-/* Sidebar navigation */
-.sidebar-nav {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
+/* ---------- Model download / header ---------- */
 
-/* Theme editor modal */
-.theme-editor-panel {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
+.header { padding: 16px; }
 
-/* Scrollbar styling for touch */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* ---------- Scrollbars ----------
+   On touch devices scrollbars are overlay-style and thin; on fine-pointer
+   (mouse) devices we render a clearly grabbable wider bar. */
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
 }
 
-/* Fix for 100vh on mobile (addresses URL bar issue) */
+@media (pointer: fine) {
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: 6px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.35);
+    background-clip: content-box;
+  }
+}
+
+/* ---------- Mobile viewport height (handles URL bar / split view) ---------- */
+
 html, body {
   height: 100%;
   height: -webkit-fill-available;
   overflow: hidden;
+  /* Reserve safe-area insets so content isn't hidden under tablet bezels /
+     system bars. App containers below add the directional insets. */
 }
 
 #app {
   height: 100%;
   height: -webkit-fill-available;
+  padding-top: var(--safe-area-top);
+  padding-bottom: var(--safe-area-bottom);
+  padding-left: var(--safe-area-left);
+  padding-right: var(--safe-area-right);
+  box-sizing: border-box;
 }
 
-/* Fragment editor */
-.fragment-editor-container {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
+/* ---------- Form controls ---------- */
 
-/* Audio preprocess */
-.audio-preprocess-container {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
+input:focus, select:focus, textarea:focus, button:focus { outline: none; }
 
-/* Singer creator */
-.singer-creator-container {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Singer market */
-.singer-market-container {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Resource manager */
-.rm-container {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Dialogs and modals */
-.dialog-overlay {
-  touch-action: none;
-}
-
-.dialog-content {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Toast notifications */
-.theme-toast {
-  touch-action: none;
-}
-
-/* Input focus styles for touch */
-input:focus, select:focus, textarea:focus, button:focus {
-  outline: none;
-}
-
-/* Large checkbox/radio targets */
-input[type="checkbox"],
-input[type="radio"] {
-  width: 20px;
-  height: 20px;
-  min-width: 20px;
-  min-height: 20px;
+input[type="checkbox"], input[type="radio"] {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
   margin: 8px;
 }
 
-/* Select dropdowns */
 select {
-  padding: 8px 32px 8px 12px;
-  font-size: 14px;
+  padding: 10px 36px 10px 14px;
+  font-size: 15px;
+  border-radius: 10px;
+  background-size: 18px;
+}
+
+input[type="number"], input[type="text"], input[type="password"] {
+  padding: 10px 12px;
+  font-size: 15px;
   border-radius: 8px;
-  background-size: 16px;
+  min-height: 40px;
 }
 
-/* Number inputs */
-input[type="number"] {
-  padding: 8px;
-  font-size: 14px;
-  border-radius: 6px;
-  min-height: 36px;
+textarea {
+  padding: 10px 12px;
+  font-size: 15px;
+  border-radius: 8px;
+  min-height: 40px;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
-/* Text inputs */
-input[type="text"] {
-  padding: 8px 12px;
-  font-size: 14px;
-  border-radius: 6px;
-  min-height: 36px;
+/* ---------- Touch feedback (no hover dependency) ---------- */
+
+button:active,
+.btn-toolbar:active,
+.sidebar-item:active,
+.list-item:active,
+.tab-item:active,
+.menu-item:active {
+  background-color: var(--tap-feedback);
+  transform: scale(0.97);
+  transition: transform 0.06s ease-out, background-color 0.06s ease-out;
 }
 
-/* Button hover states - only show on devices that support hover */
-@media (hover: hover) {
+/* ---------- Hover / fine-pointer (mouse) enhancements ----------
+   Only applied when the device actually supports hover, so touch users never
+   see stuck hover states. Mouse users keep the richer feedback. */
+
+@media (hover: hover) and (pointer: fine) {
   button:hover,
   .btn-toolbar:hover,
-  .sidebar-item:hover {
-    opacity: 0.85;
+  .sidebar-item:hover,
+  .list-item:hover,
+  .tab-item:hover {
+    opacity: 0.88;
+    transition: opacity 0.12s ease-out;
+  }
+  /* Keep active feedback on mouse too. */
+  button:active,
+  .btn-toolbar:active,
+  .sidebar-item:active {
+    opacity: 0.7;
+    transform: scale(0.97);
+  }
+  /* Cursor hints for mouse users. */
+  button, .btn-toolbar, .sidebar-item, .list-item, .tab-item { cursor: pointer; }
+  input[type="range"] { cursor: ew-resize; }
+  input[type="checkbox"], input[type="radio"] { cursor: pointer; }
+}
+
+/* ---------- Drag handles (touch + mouse) ----------
+   Explicit drag affordances used by timeline / fragment / lane editors.
+   `touch-action: none` lets the pointermove sequence drive the drag without
+   browser panning interference on either input type. */
+
+.drag-handle, .resize-handle {
+  touch-action: none;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}
+
+/* ---------- Large-pattern touch layouts ----------
+   On narrow tablets / phones, collapse sidebars into stacked panels and
+   enlarge transport controls so playback is reachable by thumb. */
+
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr !important; }
+  .sidebar-nav { flex-direction: row; overflow-x: auto; }
+  .sidebar-item { flex: 0 0 auto; }
+}
+
+@media (max-width: 720px) {
+  /* Transport (play/stop) buttons get pad-sized targets in portrait. */
+  .transport button,
+  #btn-play,
+  #btn-stop {
+    min-height: var(--touch-target-pad);
+    min-width: var(--touch-target-pad);
+    font-size: 16px;
   }
 }
 
-/* Active/pressed state for touch */
-button:active,
-.btn-toolbar:active,
-.sidebar-item:active {
-  opacity: 0.7;
-  transform: scale(0.97);
+/* ---------- Disable text-size adjust on orientation change ---------- */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Prevent pull-to-refresh inside the app shell. */
+body { overscroll-behavior-y: contain; }
+
+/* ---------- Tooltip suppression on touch ----------
+   Hover-only tooltips are inaccessible on touch; hide their visual arrows so
+   they don't linger after a tap. Driven by pointer media query so no JS class
+   toggle is required. */
+
+@media (pointer: coarse) {
+  .tooltip-arrow,
+  .has-tooltip::after {
+    display: none;
+  }
 }

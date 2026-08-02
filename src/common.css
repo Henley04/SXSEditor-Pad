@@ -1,6 +1,9 @@
 /* ==================== 共享组件样式 ==================== */
 @import './components.css';
 @import './icons/icons.css';
+/* Touch-first Pad styles — applied to every window so the tablet UI is
+   touch-friendly while keeping mouse/trackpad behaviour (see pad.css). */
+@import './pad.css';
 
 /* ==================== CSS 重置和基础样式 ==================== */
 * {

@@ -1,4 +1,6 @@
-const ort = require('onnxruntime-node');
+// Lazy/optional onnxruntime-node import (see preprocessing.js for rationale).
+let ort;
+try { ort = require('onnxruntime-node'); } catch (_) { ort = null; }
 
 /**
  * Shared utility functions (tensor helpers, math, etc.)

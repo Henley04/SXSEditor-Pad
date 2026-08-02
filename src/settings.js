@@ -615,13 +615,13 @@ async function refreshModelOverview() {
 
     // 显示当前精度标签
     if (modelOverviewMainPrecision) {
-        const prec = modelPrecisionSelect.value || 'fp32';
+        const prec = modelPrecisionSelect.value || 'int8-npu';
         modelOverviewMainPrecision.textContent = PRECISION_LABELS[prec] || prec;
     }
 
     if (!window.electronAPI?.modelDownloadCheckAllVersions) return;
     try {
-        const precision = modelPrecisionSelect.value || 'fp32';
+        const precision = modelPrecisionSelect.value || 'int8-npu';
         const result = await window.electronAPI.modelDownloadCheckAllVersions(precision);
         const mainInfo = result?.main;
         const jpInfo = result?.jp;

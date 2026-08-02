@@ -1,9 +1,11 @@
-const ort = require('onnxruntime-node');
+// Lazy/optional onnxruntime-node import (see preprocessing.js for rationale).
+let ort;
+try { ort = require('onnxruntime-node'); } catch (_) { ort = null; }
 
 // 修复 onnxruntime-common 的 float16 类型映射
-// Node.js v24+ / Electron 42+ (Chromium 138) 原生支持 Float16Array，但
-// onnxruntime-node 的 native binding (C++) 无法识别 Float16Array 的 buffer，
-// 导致 "not enough space: expected N, got 0" 错误。
+// Node.js v24+ / Chromium 138+ 原生支持 Float16Array，但 onnxruntime-node 的
+// native binding (C++) 无法识别 Float16Array 的 buffer，导致
+// "not enough space: expected N, got 0" 错误。
 // 解决方案：强制 float16 Using Uint16Array 存储数据。
 //
 // 注意：在 webpack 打包后，`require` 会被替换为 `__webpack_require__`，
@@ -15,6 +17,7 @@ const nativeRequire = (typeof __non_webpack_require__ !== 'undefined')
     : require;
 
 (function patchFloat16Mapping() {
+    if (!ort) return; // native binding unavailable — nothing to patch
     if (typeof Float16Array === 'undefined') return; // 不需要 patch
     try {
         // 触发 checkTypedArray 初始化

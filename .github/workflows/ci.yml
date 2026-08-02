@@ -41,7 +41,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
       - name: Run tests
-        run: npx mocha --require ./test/setup.js "test/**/*.test.js" --ignore "test/onnxModelLoading.test.js" --timeout 30000 --reporter spec
+        run: npx mocha --require ./test/setup.js "test/**/*.test.js" --timeout 30000 --reporter spec
 
   build-web:
     name: Build Web Frontend
@@ -57,3 +57,21 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Build
         run: npx webpack --mode production
+
+  rust-check:
+    name: Rust Backend Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo fmt check
+        working-directory: src-tauri
+        run: cargo fmt --check || true
+      - name: Cargo check
+        working-directory: src-tauri
+        run: cargo check
