@@ -31,7 +31,12 @@ futures-util = "0.3"
 # Native ONNX Runtime inference. `load-dynamic` loads libonnxruntime at
 # runtime (ORT Mobile .so on Android, .xcframework on iOS, system lib on
 # desktop) so the crate compiles and tests without the native library present.
-ort = { version = "2.0.0-rc.13", default-features = false, features = ["load-dynamic", "half"] }
+# The `nnapi` / `coreml` features enable the matching ExecutionProvider Rust
+# wrappers (ort::ep::NNAPI / ort::ep::CoreML) used in the
+# #[cfg(target_os = "...")] acceleration paths; with `load-dynamic` they only
+# expose the config builders (the EP itself is registered by the bundled ORT
+# Mobile lib at runtime), so enabling them on non-matching targets is a no-op.
+ort = { version = "2.0.0-rc.13", default-features = false, features = ["load-dynamic", "half", "nnapi", "coreml"] }
 half = "2"
 # Dynamic loading for libtensorflowlite_c (Basic Pitch / LiteRT).
 libloading = "0.8"

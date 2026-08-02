@@ -300,20 +300,40 @@ async fn model_download_get_dir(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 async fn model_download_change_dir(app: AppHandle) -> Result<Value, String> {
     // Pick a new directory and persist it to settings.modelDir.
-    let picked = app
-        .dialog()
-        .file()
-        .set_title("Select model directory")
-        .blocking_pick_folder();
-    match picked {
-        Some(path) => {
-            let s = path.to_string();
-            let mut settings = models::read_settings(&app);
-            settings["modelDir"] = json!(s);
-            models::write_settings(&app, &settings)?;
-            Ok(json!({ "dir": s }))
+    //
+    // The native folder picker is desktop-only: tauri-plugin-dialog documents
+    // "Does not support folder picker" on Android and iOS, and the
+    // `blocking_pick_folder` method is correspondingly cfg-gated out of the
+    // `FileDialogBuilder` on mobile targets (compiling it there yields
+    // `no method named blocking_pick_folder found`). On mobile the model
+    // directory is fixed to the app sandbox (resolve_model_dir) and cannot be
+    // user-changed, so we return the current dir with a `changed: false` flag
+    // instead of rendering a broken picker.
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let settings = models::read_settings(&app);
+        let dir = models::resolve_model_dir(&app, &settings)
+            .to_string_lossy()
+            .to_string();
+        return Ok(json!({ "dir": dir, "changed": false }));
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let picked = app
+            .dialog()
+            .file()
+            .set_title("Select model directory")
+            .blocking_pick_folder();
+        match picked {
+            Some(path) => {
+                let s = path.to_string();
+                let mut settings = models::read_settings(&app);
+                settings["modelDir"] = json!(s);
+                models::write_settings(&app, &settings)?;
+                Ok(json!({ "dir": s }))
+            }
+            None => Ok(json!({ "dir": null })),
         }
-        None => Ok(json!({ "dir": null })),
     }
 }
 
