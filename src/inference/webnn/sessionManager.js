@@ -2,7 +2,7 @@
  * WebNN 推理模块 — 模型会话创建、管理、释放
  */
 
-import { ensureOrt, getOrt } from './ortSetup.js';
+import { ensureOrt, getOrt, isNativeBackend } from './ortSetup.js';
 import { WEBNN_EP_TIMEOUT, WEBNN_VOCODER_TIMEOUT } from './constants.js';
 import { extractRelativePath, batchFloat32ToFloat16, disposeTensor } from './utils.js';
 
@@ -92,12 +92,21 @@ export async function loadModel(modelId, modelPath, options = { deviceType: 'npu
         }
     }
 
-    // Read model file (+ optional .onnx.data) as ArrayBuffer via IPC
+    // Read model file (+ optional .onnx.data) as ArrayBuffer via IPC.
+    // Native backend: sessions are created from the file path directly in
+    // Rust — shipping 100MB+ through IPC would be pure overhead, so we skip
+    // the read entirely and hand the path down via sessionOptions.__modelPath.
+    const useNative = isNativeBackend();
     let modelBuffer, externalDataBuffers;
-    try {
-        ({ modelBuffer, externalDataBuffers } = await readModelFiles(modelPath));
-    } catch (e) {
-        return { success: false, ep: null, error: `Failed to read model file: ${e.message}` };
+    if (useNative) {
+        modelBuffer = new ArrayBuffer(0);
+        externalDataBuffers = [];
+    } else {
+        try {
+            ({ modelBuffer, externalDataBuffers } = await readModelFiles(modelPath));
+        } catch (e) {
+            return { success: false, ep: null, error: `Failed to read model file: ${e.message}` };
+        }
     }
 
     console.log(`[WebNN] Loading ${modelId} (${(modelBuffer.byteLength / 1024 / 1024).toFixed(2)} MB, extData: ${externalDataBuffers.length})`);
@@ -148,8 +157,9 @@ export async function loadModel(modelId, modelPath, options = { deviceType: 'npu
 
     // 大模型（>100MB）禁用运行时图优化以加速加载
     // 这些模型已经过离线优化，运行时优化是冗余的且 NPU 编译很慢
+    // 原生后端下 modelBuffer 为空（模型未读入），由 Rust 侧按文件大小判断。
     const modelSizeMB = modelBuffer.byteLength / (1024 * 1024);
-    if (modelSizeMB > 100) {
+    if (!useNative && modelSizeMB > 100) {
         sessionOptions.graphOptimizationLevel = 'disabled';
         console.log(`[WebNN] Large model (${modelSizeMB.toFixed(0)}MB), runtime graph optimization disabled (already offline-optimized)`);
     }
@@ -157,6 +167,10 @@ export async function loadModel(modelId, modelPath, options = { deviceType: 'npu
     if (externalDataBuffers.length > 0) {
         sessionOptions.externalData = externalDataBuffers;
     }
+
+    // 原生后端附加参数（__ 前缀；传给 onnxruntime-web 前必须剥离）
+    sessionOptions.__modelPath = modelPath;
+    sessionOptions.__modelId = modelId;
 
     let lastError = null;
     for (const ep of epChain) {
@@ -172,8 +186,9 @@ export async function loadModel(modelId, modelPath, options = { deviceType: 'npu
         try {
             console.log(`[WebNN] Trying ${modelId} with EP: ${epLabel}...`);
 
+            const { __modelPath, __modelId, ...publicOptions } = sessionOptions;
             createPromise = ort.InferenceSession.create(modelBuffer, {
-                ...sessionOptions,
+                ...(useNative ? sessionOptions : publicOptions),
                 executionProviders: [ep],
             });
             const timeoutPromise = new Promise((_, reject) => {

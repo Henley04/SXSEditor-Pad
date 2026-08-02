@@ -98,10 +98,20 @@ const tauriBridge = {
   // Model directory
   getModelDir: () => invoke('get_model_dir'),
 
-  // Pitch / MIDI extraction (renderer-side via WASM; Rust stubs return errors)
-  extractF0: (data) => invoke('extract_f0_onnx', { data }),
+  // Pitch / MIDI extraction — renderer-native runners (dynamic import keeps
+  // the inference chunks out of the initial bundle):
+  //   RMVPE (ONNX)  → src/inference/native/rmvpeNative.js   (native ORT / ort-web)
+  //   Basic Pitch   → src/inference/native/basicPitchNative.js (LiteRT / TF.js)
+  //   Rosvot        → model not shipped in the INT8-NPU build; stub stays.
+  extractF0: async (data) => {
+    const { extractF0Native } = await import('./inference/native/rmvpeNative.js');
+    return extractF0Native(data);
+  },
   extractMidiRosvot: (data) => invoke('extract_midi_rosvot', { data }),
-  extractF0BasicPitch: (data) => invoke('extract_f0_basic_pitch', { data }),
+  extractF0BasicPitch: async (data) => {
+    const { extractBasicPitchNative } = await import('./inference/native/basicPitchNative.js');
+    return extractBasicPitchNative(data);
+  },
   importMidi: () => invoke('midi_import'),
   importMidiMultiTrack: () => invoke('midi_import_multi_track'),
   resolvePath: (basePath, relativePath) => invoke('resolve_path', { basePath, relativePath }),
@@ -166,6 +176,29 @@ const tauriBridge = {
 
   // SVS JP model check
   svsCheckJpModels: () => invoke('svs_check_jp_models'),
+
+  // ---------------- Native inference (ORT Mobile / LiteRT) ----------------
+  // The live SVS inference path: tensors are packed into binary frames by
+  // src/inference/native/tensorCodec.js and executed by the Rust ORT engine.
+  getPlatformInfo: () => invoke('get_platform_info'),
+  nativeOrtInit: (libPath) => invoke('native_ort_init', { libPath: libPath || null }),
+  nativeOrtDetectAccelerators: () => invoke('native_ort_detect_accelerators'),
+  nativeOrtLoadModel: (modelId, modelPath, options) => invoke('native_ort_load_model', { modelId, modelPath, options: options || null }),
+  nativeOrtUnloadModel: (modelId) => invoke('native_ort_unload_model', { modelId }),
+  nativeOrtStatus: () => invoke('native_ort_status'),
+  // Raw-frame fast path (desktop/iOS): bare Uint8Array → octet-stream body.
+  nativeOrtRun: (frameBytes) => invoke('native_ort_run', frameBytes),
+  // Android path: base64 JSON (avoids numeric-array serialization cost).
+  nativeOrtRunB64: (frameB64) => invoke('native_ort_run_b64', { frameB64 }),
+  nativeTfliteInit: (libPath) => invoke('native_tflite_init', { libPath: libPath || null }),
+  nativeTfliteLoadModel: (modelId, modelPath, numThreads, useAccelerator) =>
+    invoke('native_tflite_load_model', { modelId, modelPath, numThreads: numThreads || null, useAccelerator: useAccelerator ?? null }),
+  nativeTfliteRun: (modelId, inputs) => invoke('native_tflite_run', { modelId, inputs }),
+  nativeTfliteUnload: (modelId) => invoke('native_tflite_unload', { modelId }),
+  nativeTfliteStatus: () => invoke('native_tflite_status'),
+  nativeExportWav: (samplesB64, sampleRate, channels, bitsPerSample, path) =>
+    invoke('native_export_wav', { samplesB64, sampleRate, channels, bitsPerSample, path }),
+  nativeSha256File: (path) => invoke('native_sha256_file', { path }),
 
   // Locale
   saveLocale: (locale) => invoke('save_locale', { locale }),

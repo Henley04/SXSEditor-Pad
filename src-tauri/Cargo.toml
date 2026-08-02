@@ -26,8 +26,22 @@ serde_json = "1"
 # rustls-tls avoids native OpenSSL on Android/iOS; `stream` enables chunked
 # download progress reporting back to the renderer.
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
-tokio = { version = "1", features = ["fs", "io-util", "sync", "rt"] }
+tokio = { version = "1", features = ["fs", "io-util", "sync", "rt", "macros"] }
 futures-util = "0.3"
+# Native ONNX Runtime inference. `load-dynamic` loads libonnxruntime at
+# runtime (ORT Mobile .so on Android, .xcframework on iOS, system lib on
+# desktop) so the crate compiles and tests without the native library present.
+ort = { version = "2.0.0-rc.13", default-features = false, features = ["load-dynamic", "half"] }
+half = "2"
+# Dynamic loading for libtensorflowlite_c (Basic Pitch / LiteRT).
+libloading = "0.8"
+# WAV export for synthesized audio.
+hound = "3"
+# SHA-256 model integrity checks.
+sha2 = "0.10"
+# Base64 tensor-frame transport (Android IPC fallback path).
+base64 = "0.22"
+parking_lot = "0.12"
 
 [profile.release]
 panic = "abort"
