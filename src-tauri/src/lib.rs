@@ -1,16 +1,19 @@
 //! SXSEditor-Pad Tauri backend.
 //!
-//! Replaces the entire Electron main-process layer (src/main/*). Inference runs
-//! in the renderer via onnxruntime-web (WebNN EP); the Rust side owns:
+//! Replaces the entire Electron main-process layer (src/main/*). Inference now
+//! runs natively in Rust (inference::ort_engine — ONNX Runtime Mobile with
+//! NNAPI/CoreML/CPU execution providers, loaded via `load-dynamic`; Basic
+//! Pitch via inference::tflite / LiteRT). The renderer keeps the pipeline
+//! orchestration (tokenization, samplers, stitching) and ships only packed
+//! tensor frames across IPC. The Rust side also owns:
 //!   - model directory resolution & ModelScope download (models.rs)
 //!   - theme bootstrap (theme.rs)
 //!   - settings / locale persistence
-//!   - file IO, model-file reading for WebNN, shell opener
+//!   - file IO, WAV export (hound), SHA-256 integrity checks
 //!   - graceful stubs for legacy IPC channels that the renderer still calls
-//!     (svs:*, fragment-svs:*, audio:*) so the app boots without crashing;
-//!     these were Electron main-process inference commands. The live inference
-//!     path is the WebNN renderer pipeline (src/inference/webnn).
+//!     (svs:*, fragment-svs:*, audio:*) so the app boots without crashing.
 
+mod inference;
 mod models;
 mod theme;
 
@@ -211,7 +214,11 @@ async fn theme_current(app: AppHandle, _options: Option<Value>) -> Result<Value,
 }
 
 #[tauri::command]
-async fn theme_apply(app: AppHandle, theme_id: String, _options: Option<Value>) -> Result<Value, String> {
+async fn theme_apply(
+    app: AppHandle,
+    theme_id: String,
+    _options: Option<Value>,
+) -> Result<Value, String> {
     let mut settings = models::read_settings(&app);
     settings["theme"] = json!(theme_id);
     models::write_settings(&app, &settings)?;
@@ -275,7 +282,10 @@ async fn model_download_check(app: AppHandle) -> Result<Value, String> {
         .unwrap_or(models::DEFAULT_PRECISION)
         .to_string();
     let missing = models::check_missing(&app, &prec, "master").await;
-    let _ = app.emit("model-download:missing-files", json!({ "files": missing, "precision": prec }));
+    let _ = app.emit(
+        "model-download:missing-files",
+        json!({ "files": missing, "precision": prec }),
+    );
     Ok(json!({ "files": missing, "precision": prec }))
 }
 
@@ -356,7 +366,10 @@ async fn model_download_update(
 // --- Version checks (stubbed: only master revision is wired up for now) ---
 
 #[tauri::command]
-async fn model_download_check_version(_app: AppHandle, _precision: String) -> Result<Value, String> {
+async fn model_download_check_version(
+    _app: AppHandle,
+    _precision: String,
+) -> Result<Value, String> {
     Ok(json!({
         "updateAvailable": false,
         "localVersion": null,
@@ -367,7 +380,10 @@ async fn model_download_check_version(_app: AppHandle, _precision: String) -> Re
 }
 
 #[tauri::command]
-async fn model_download_list_versions(_app: AppHandle, _precision: String) -> Result<Value, String> {
+async fn model_download_list_versions(
+    _app: AppHandle,
+    _precision: String,
+) -> Result<Value, String> {
     Ok(json!([{ "tag": "master" }]))
 }
 
@@ -420,7 +436,10 @@ async fn model_download_unload_sifigan(_app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn model_download_check_jp_version(_app: AppHandle, _precision: String) -> Result<Value, String> {
+async fn model_download_check_jp_version(
+    _app: AppHandle,
+    _precision: String,
+) -> Result<Value, String> {
     Ok(json!({ "updateAvailable": false, "latestVersion": null }))
 }
 
@@ -444,7 +463,10 @@ async fn model_download_update_sifigan(_app: AppHandle, _revision: String) -> Re
 }
 
 #[tauri::command]
-async fn model_download_list_jp_versions(_app: AppHandle, _precision: String) -> Result<Value, String> {
+async fn model_download_list_jp_versions(
+    _app: AppHandle,
+    _precision: String,
+) -> Result<Value, String> {
     Ok(json!([]))
 }
 
@@ -490,13 +512,177 @@ async fn webnn_unload_model(_app: AppHandle, _model_id: String) -> Result<(), St
 }
 
 #[tauri::command]
-async fn webnn_run_inference(_app: AppHandle, _model_id: String, _inputs: Value) -> Result<Value, String> {
+async fn webnn_run_inference(
+    _app: AppHandle,
+    _model_id: String,
+    _inputs: Value,
+) -> Result<Value, String> {
     Err("webnn:runInference is renderer-only (onnxruntime-web)".to_string())
 }
 
 #[tauri::command]
 async fn webnn_get_status() -> Result<Value, String> {
     Ok(json!({ "sessions": [], "available": false }))
+}
+
+// ============================ Native inference (ORT / LiteRT) ============================
+//
+// The live SVS inference path. The renderer's pipeline (src/inference/webnn +
+// src/inference/native) prepares tensors; these commands execute the ONNX
+// sessions natively via ONNX Runtime Mobile (NNAPI on Android, CoreML on iOS,
+// CPU elsewhere). Basic Pitch runs on LiteRT. Model bytes never cross IPC —
+// sessions are created from file paths; only tensor frames cross, raw-packed.
+
+#[tauri::command]
+async fn native_ort_init(lib_path: Option<String>) -> Result<Value, String> {
+    let p = lib_path.clone();
+    tauri::async_runtime::spawn_blocking(move || inference::ort_engine::init(p.as_deref()))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn native_ort_detect_accelerators() -> Result<Value, String> {
+    Ok(inference::ort_engine::status()
+        .get("accelerators")
+        .cloned()
+        .unwrap_or_else(|| json!({})))
+}
+
+#[tauri::command]
+async fn native_ort_load_model(
+    model_id: String,
+    model_path: String,
+    options: Option<Value>,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        inference::ort_engine::load_model(&model_id, &model_path, options.as_ref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn native_ort_unload_model(model_id: String) -> Result<Value, String> {
+    Ok(json!({ "unloaded": inference::ort_engine::unload_model(&model_id) }))
+}
+
+#[tauri::command]
+async fn native_ort_status() -> Result<Value, String> {
+    Ok(inference::ort_engine::status())
+}
+
+/// Raw-frame inference: request body is a packed tensor frame
+/// (`inference::frame`), response body is the packed output frame. This is the
+/// fast path used on desktop/iOS where the custom protocol carries raw bytes.
+#[tauri::command]
+async fn native_ort_run(request: tauri::ipc::Request<'_>) -> Result<tauri::ipc::Response, String> {
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(b) => b.clone(),
+        // Android postMessage fallback: the renderer's Uint8Array arrives as a
+        // JSON array of numbers.
+        tauri::ipc::InvokeBody::Json(v) => serde_json::from_value::<Vec<u8>>(v.clone())
+            .map_err(|e| format!("bad invoke body: {e}"))?,
+    };
+    let out =
+        tauri::async_runtime::spawn_blocking(move || inference::ort_engine::run_frame(&bytes))
+            .await
+            .map_err(|e| e.to_string())??;
+    Ok(tauri::ipc::Response::new(out))
+}
+
+/// Base64 frame transport for Android, where invoke() payloads are JSON —
+/// a base64 string parses ~3x faster than a numeric array of the same bytes.
+#[tauri::command]
+async fn native_ort_run_b64(frame_b64: String) -> Result<Value, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&frame_b64)
+        .map_err(|e| format!("bad frame base64: {e}"))?;
+    let out =
+        tauri::async_runtime::spawn_blocking(move || inference::ort_engine::run_frame(&bytes))
+            .await
+            .map_err(|e| e.to_string())??;
+    Ok(json!({ "frameB64": base64::engine::general_purpose::STANDARD.encode(out) }))
+}
+
+// --- LiteRT (Basic Pitch) ---
+
+#[tauri::command]
+async fn native_tflite_init(lib_path: Option<String>) -> Result<Value, String> {
+    let p = lib_path.clone();
+    tauri::async_runtime::spawn_blocking(move || inference::tflite::init(p.as_deref()))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn native_tflite_load_model(
+    model_id: String,
+    model_path: String,
+    num_threads: Option<i32>,
+    use_accelerator: Option<bool>,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        inference::tflite::load_model(
+            &model_id,
+            &model_path,
+            num_threads,
+            use_accelerator.unwrap_or(true),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn native_tflite_run(model_id: String, inputs: Vec<Value>) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || inference::tflite::run(&model_id, &inputs))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn native_tflite_unload(model_id: String) -> Result<Value, String> {
+    Ok(json!({ "unloaded": inference::tflite::unload(&model_id) }))
+}
+
+#[tauri::command]
+async fn native_tflite_status() -> Result<Value, String> {
+    Ok(inference::tflite::status())
+}
+
+// --- Audio export / integrity ---
+
+#[tauri::command]
+async fn native_export_wav(
+    samples_b64: String,
+    sample_rate: u32,
+    channels: u16,
+    bits_per_sample: u16,
+    path: String,
+) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        inference::audio_export::export_wav(
+            &samples_b64,
+            sample_rate,
+            channels,
+            bits_per_sample,
+            &path,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn native_sha256_file(path: String) -> Result<Value, String> {
+    let p = path.clone();
+    let digest =
+        tauri::async_runtime::spawn_blocking(move || inference::audio_export::sha256_file(&p))
+            .await
+            .map_err(|e| e.to_string())??;
+    Ok(json!({ "path": path, "sha256": digest }))
 }
 
 // ============================ Legacy SVS / audio stubs ============================
@@ -559,7 +745,11 @@ async fn fragment_svs_dispose() -> Result<(), String> {
 // ============================ Fragment / project persistence ============================
 
 #[tauri::command]
-async fn save_fragment_data(app: AppHandle, fragment_id: String, data: Value) -> Result<(), String> {
+async fn save_fragment_data(
+    app: AppHandle,
+    fragment_id: String,
+    data: Value,
+) -> Result<(), String> {
     let dir = fragments_dir(&app);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{}.json", fragment_id));
@@ -594,7 +784,11 @@ async fn fragment_close_all(_app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn update_fragment_bounds(_app: AppHandle, _fragment_id: String, _data: Value) -> Result<(), String> {
+async fn update_fragment_bounds(
+    _app: AppHandle,
+    _fragment_id: String,
+    _data: Value,
+) -> Result<(), String> {
     Ok(())
 }
 
@@ -765,12 +959,20 @@ async fn resmgr_get_model_groups() -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn resmgr_load_model(_app: AppHandle, _group_id: String, _model_id: String) -> Result<(), String> {
+async fn resmgr_load_model(
+    _app: AppHandle,
+    _group_id: String,
+    _model_id: String,
+) -> Result<(), String> {
     Err("Model loading is renderer-only (WebNN)".to_string())
 }
 
 #[tauri::command]
-async fn resmgr_unload_model(_app: AppHandle, _group_id: String, _model_id: String) -> Result<(), String> {
+async fn resmgr_unload_model(
+    _app: AppHandle,
+    _group_id: String,
+    _model_id: String,
+) -> Result<(), String> {
     Err("Model unloading is renderer-only (WebNN)".to_string())
 }
 
@@ -889,7 +1091,10 @@ async fn singer_market_pick_file(app: AppHandle) -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn singer_market_pick_save_path(app: AppHandle, suggested_name: Option<String>) -> Result<Value, String> {
+async fn singer_market_pick_save_path(
+    app: AppHandle,
+    suggested_name: Option<String>,
+) -> Result<Value, String> {
     let mut builder = app.dialog().file().set_title("Save as");
     if let Some(name) = suggested_name {
         builder = builder.set_file_name(&name);
@@ -980,6 +1185,21 @@ pub fn run() {
             webnn_unload_model,
             webnn_run_inference,
             webnn_get_status,
+            // Native inference (ORT Mobile / LiteRT)
+            native_ort_init,
+            native_ort_detect_accelerators,
+            native_ort_load_model,
+            native_ort_unload_model,
+            native_ort_status,
+            native_ort_run,
+            native_ort_run_b64,
+            native_tflite_init,
+            native_tflite_load_model,
+            native_tflite_run,
+            native_tflite_unload,
+            native_tflite_status,
+            native_export_wav,
+            native_sha256_file,
             // Legacy SVS / audio
             svs_init,
             svs_synthesize,

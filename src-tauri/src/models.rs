@@ -200,16 +200,13 @@ mod urlencoding {
 
 /// Determine which manifest files are missing locally, filtered by remote
 /// availability. Returns a JSON array of `{ fileId, fileName, filePath, size }`.
-pub async fn check_missing(
-    app: &AppHandle,
-    precision: &str,
-    revision: &str,
-) -> Vec<Value> {
+pub async fn check_missing(app: &AppHandle, precision: &str, revision: &str) -> Vec<Value> {
     let settings = read_settings(app);
     let model_dir = resolve_model_dir(app, &settings);
     let _ = std::fs::create_dir_all(&model_dir);
 
-    let svs_repo = model_id_for_precision(precision).unwrap_or(model_id_for_precision(DEFAULT_PRECISION).unwrap());
+    let svs_repo = model_id_for_precision(precision)
+        .unwrap_or(model_id_for_precision(DEFAULT_PRECISION).unwrap());
     let client = reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()
@@ -224,12 +221,23 @@ pub async fn check_missing(
     let mut missing = Vec::new();
     for (idx, (file_path, required)) in manifest().iter().enumerate() {
         let local = model_dir.join(file_path);
-        let exists = local.exists() && std::fs::metadata(&local).map(|m| m.len() > 0).unwrap_or(false);
+        let exists = local.exists()
+            && std::fs::metadata(&local)
+                .map(|m| m.len() > 0)
+                .unwrap_or(false);
         if exists {
             continue;
         }
-        let repo = if is_svs_file(file_path) { svs_repo } else { PREPROCESS_REPO };
-        let remote = if is_svs_file(file_path) { &svs_remote } else { &prep_remote };
+        let repo = if is_svs_file(file_path) {
+            svs_repo
+        } else {
+            PREPROCESS_REPO
+        };
+        let remote = if is_svs_file(file_path) {
+            &svs_remote
+        } else {
+            &prep_remote
+        };
         // Filter out files the remote doesn't expose. For required files we
         // still include them (so the user sees what's expected) unless the
         // remote list is known and the file is absent.
@@ -287,7 +295,9 @@ async fn download_one(
     cancel: &Mutex<bool>,
 ) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
-        tokio::fs::create_dir_all(parent).await.map_err(|e| e.to_string())?;
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| e.to_string())?;
     }
     let resp = client
         .get(url)
@@ -335,7 +345,9 @@ async fn download_one(
     }
     file.flush().await.map_err(|e| e.to_string())?;
     drop(file);
-    tokio::fs::rename(&tmp, dest).await.map_err(|e| e.to_string())?;
+    tokio::fs::rename(&tmp, dest)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let _ = app.emit(
         "model-download:file-complete",
@@ -406,7 +418,17 @@ pub async fn run_download(
         };
         let url = file_download_url(repo, file_path, &revision);
         let dest = model_dir.join(file_path);
-        if let Err(err) = download_one(&app, &client, &url, &dest, file_id, file_path, &dl_state.cancel).await {
+        if let Err(err) = download_one(
+            &app,
+            &client,
+            &url,
+            &dest,
+            file_id,
+            file_path,
+            &dl_state.cancel,
+        )
+        .await
+        {
             if err == "cancelled" {
                 let _ = app.emit("model-download:error", json!({ "message": "cancelled" }));
                 return Ok(());

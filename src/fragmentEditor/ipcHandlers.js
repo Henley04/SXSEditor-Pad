@@ -188,15 +188,38 @@ async function handleFragmentData(data) {
 
 export async function loadFragmentFromHash() {
   await new Promise(resolve => setTimeout(resolve, 500));
-  if (!getFragmentDataReceived()) {
-    const hash = window.location.hash;
-    const match = hash.match(/fragmentId=([^&]+)/);
-    if (match && window.electronAPI?.getFragmentData) {
-      const fragmentId = match[1];
-      const data = await window.electronAPI.getFragmentData(fragmentId);
-      if (data) {
-        await handleFragmentData(data);
-      }
+  if (getFragmentDataReceived()) return;
+
+  // SPA mailbox handoff: the bridge's `openFragmentEditor` stashes the full
+  // payload (including the non-serializable wavBuffer) here before navigating.
+  // Consume it first; if it carries the fragment/project we can skip the
+  // file-backed round-trip. Falls through to `getFragmentData` otherwise
+  // (covers direct page loads / deep links where the mailbox is empty).
+  let mail = null;
+  try {
+    if (window.electronAPI?.spa?.consumeMail) {
+      mail = window.electronAPI.spa.consumeMail('fragment-editor');
     }
+  } catch (_) { /* mailbox is best-effort */ }
+
+  const hash = window.location.hash;
+  const match = hash.match(/fragmentId=([^&]+)/);
+  if (match && window.electronAPI?.getFragmentData) {
+    const fragmentId = match[1];
+    const data = await window.electronAPI.getFragmentData(fragmentId);
+    if (data) {
+      // The mailbox's wavBuffer survives cross-page navigation (in-memory for
+      // same-page SPA, sessionStorage base64 for the multi-page build); merge
+      // it into the file-backed payload so handleFragmentData picks it up.
+      if (mail && mail.wavBuffer && !data.wavBuffer) data.wavBuffer = mail.wavBuffer;
+      await handleFragmentData(data);
+      return;
+    }
+  }
+
+  // No file-backed data (deep link without a prior save): fall back to the
+  // mailbox payload alone, if present.
+  if (mail) {
+    await handleFragmentData(mail);
   }
 }

@@ -1,14 +1,20 @@
 /**
- * WebNN 推理模块 — onnxruntime-web 初始化与全局 ort 引用
+ * 推理后端初始化 — 原生 ORT（优先）或 onnxruntime-web（回退）
  *
- * ort.all.min.js 历史上通过 index.html 的 <script src> 同步加载，会阻塞
- * 主窗口渲染进程的 did-finish-load 事件（5-10MB UMD 解析）。
- * 现已从 HTML 移除，改为按需动态加载：首次调用 ensureOrt() 时注入
- * <script> 标签，加载完成后配置 WASM 路径并返回 ort 引用。
+ * 后端选择（ensureOrt）：
+ *   1. 原生后端：Tauri 环境下经 src/inference/native/nativeOrtClient.js
+ *      动态加载 libonnxruntime（Android NNAPI / iOS CoreML / 桌面 CPU）。
+ *      推理在 Rust 侧执行，模型直读磁盘，张量走二进制帧。
+ *   2. onnxruntime-web 回退：原生库不可用（如纯浏览器开发）时动态注入
+ *      ort.all.min.js（WebNN NPU/GPU → WASM）。
+ *
+ * 两条路径暴露相同的 Tensor / InferenceSession 接口，管线代码无感知。
  */
 
-// onnxruntime-web UMD bundle path (relative to main window's HTML).
-// webpack.renderer.config.js copies ort.all.min.js alongside each entry's HTML.
+import { tryInitNativeBackend } from '../native/nativeOrtClient.js';
+
+// onnxruntime-web UMD bundle path (relative to the current page; the bundler
+// copies ort assets next to each entry — see vite.config.js / publicDir).
 const ORT_UMD_PATH = './ort.all.min.js';
 
 // Cached ort reference once loaded.
@@ -53,9 +59,15 @@ function loadOrtScript() {
 export async function ensureOrt() {
     if (ort) return ort;
 
-    // If the UMD bundle has already been loaded (e.g. by another window or
-    // legacy <script> tag), use the global directly. Otherwise, load it
-    // dynamically now.
+    // Backend 1: native ORT (Tauri). Loaded from disk, executes in Rust.
+    const native = await tryInitNativeBackend();
+    if (native) {
+        ort = native;
+        console.log('[Inference] Using native ONNX Runtime backend (NNAPI/CoreML/CPU)');
+        return ort;
+    }
+
+    // Backend 2: onnxruntime-web UMD (browser dev / fallback).
     if (typeof window === 'undefined' || !window.ort) {
         await loadOrtScript();
     }
@@ -88,4 +100,17 @@ export async function ensureOrt() {
  */
 export function getOrt() {
     return ort;
+}
+
+/**
+ * 当前后端是否为原生 ORT（true）或 onnxruntime-web（false）。
+ * 未初始化时返回 false。
+ */
+export function isNativeBackend() {
+    return Boolean(ort && ort.__isNativeFacade);
+}
+
+/** 测试重置：清空缓存的后端引用 */
+export function __resetOrtForTests() {
+    ort = null;
 }
