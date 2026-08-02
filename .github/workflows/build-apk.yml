@@ -56,6 +56,13 @@ jobs:
     name: Build APK (${{ matrix.abi }})
     needs: build-web
     runs-on: ubuntu-latest
+    # Job-level env exposes whether the signing keystore secret is present.
+    # Step-level `if:` cannot reference the `secrets` context directly
+    # (GitHub Actions restricts it — only env/github/inputs/job/matrix/
+    # needs/runner/steps/strategy/vars are allowed in `if:`), so we
+    # materialise the boolean here and have steps check `env.HAS_SIGNING`.
+    env:
+      HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -132,9 +139,11 @@ jobs:
         # pointing at it, and inject a `signingConfigs { release { ... } }`
         # block into the Tauri-generated app/build.gradle.kts. The patch
         # script is idempotent so re-runs are safe. Secrets are absent on
-        # forks/PRs from forks — we guard with `if` so the job degrades to
-        # the unsigned build there instead of failing.
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        # forks/PRs from forks — we guard with `if: env.HAS_SIGNING ==
+        # 'true'` (set at job level, since `secrets` is not allowed in
+        # step `if:`) so the job degrades to the unsigned build there
+        # instead of failing.
+        if: ${{ env.HAS_SIGNING == 'true' }}
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -179,9 +188,8 @@ jobs:
         # Both must pass before the APK is uploaded as an artifact. The
         # signature check only runs when a signing key was configured
         # (fork PRs have no access to the keystore secret → unsigned build,
-        # which is expected there and skipped, not failed).
-        env:
-          HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        # which is expected there and skipped, not failed). HAS_SIGNING is
+        # set at job level (see comment there).
         run: |
           set -e
           AAPT=$(find $ANDROID_HOME -name aapt2 -type f 2>/dev/null | head -1)
@@ -256,6 +264,9 @@ jobs:
     name: Build Universal APK (all architectures)
     needs: build-web
     runs-on: ubuntu-latest
+    # See the build-apk job for why HAS_SIGNING lives at job level.
+    env:
+      HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -313,7 +324,7 @@ jobs:
         # Same signing setup as the per-ABI job (see comment there). The
         # universal APK is what we recommend users install, so it MUST be
         # signed by the upload key.
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_SIGNING == 'true' }}
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -349,9 +360,8 @@ jobs:
 
       - name: Verify Universal APK is installable (badging + signature)
         # See the per-ABI verify step for rationale. Both badging + apksigner
-        # must pass before the universal APK is uploaded.
-        env:
-          HAS_SIGNING: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        # must pass before the universal APK is uploaded. HAS_SIGNING comes
+        # from the job-level env.
         run: |
           set -e
           AAPT=$(find $ANDROID_HOME -name aapt2 -type f 2>/dev/null | head -1)
