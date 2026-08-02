@@ -37,20 +37,34 @@ DEFAULT_PATH = os.path.join(
 #   keyPassword=...
 #   storePassword=...
 #   storeFile=<absolute path to decoded .jks>
+#
+# Uses SHORT class names (Properties / FileInputStream) — fully-qualified
+# `java.util.Properties` / `java.io.FileInputStream` FAIL to compile inside
+# the AGP `signingConfigs { create("release") { ... } }` Kotlin-DSL scope
+# because the bare identifier `java` resolves to an in-scope AGP extension
+# property rather than the `java` package, yielding
+# "Unresolved reference: util" / "Unresolved reference: io". The imports are
+# added at file top (see `REQUIRED_IMPORTS`) so the short names resolve.
 SIGNING_CONFIG_BLOCK = """    signingConfigs {
         create("release") {
             val keystorePropertiesFile = rootProject.file("keystore.properties")
-            val keystoreProperties = java.util.Properties()
+            val keystoreProperties = Properties()
             if (keystorePropertiesFile.exists()) {
-                keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))
+                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
             }
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["keyPassword"] as String
-            storeFile = file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["storePassword"] as String
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+            storeFile = file(keystoreProperties.getProperty("storeFile"))
+            storePassword = keystoreProperties.getProperty("storePassword")
         }
     }
 """
+
+# Imports the signingConfigs block needs. Inserted at the top of the file
+# (after the existing import block) so the short class names resolve.
+# `java.util.Properties` + `java.io.FileInputStream` — see note above on
+# why we MUST import instead of using fully-qualified names.
+REQUIRED_IMPORTS = ["java.util.Properties", "java.io.FileInputStream"]
 
 # Line injected into the existing `release` buildType so it picks up the
 # release signing config. Anchored on the buildType's opening line so it
@@ -66,21 +80,31 @@ def patch(path: str) -> None:
         src = f.read()
     original = src
 
-    # 1. Ensure the FileInputStream import is present (Tauri's template
-    #    does not ship it). Insert after the existing `import ...` block
-    #    header to keep a clean grouping; avoid duplicates.
-    if "import java.io.FileInputStream" not in src:
+    # 1. Ensure the imports the signingConfigs block needs are present
+    #    (Tauri's template does not ship them). Insert after the existing
+    #    `import ...` block to keep a clean grouping; skip any already
+    #    present (idempotent). We CANNOT use fully-qualified
+    #    `java.util.Properties` / `java.io.FileInputStream` inline because
+    #    inside the AGP signingConfigs Kotlin-DSL scope the bare `java`
+    #    resolves to an in-scope AGP extension property, not the package
+    #    ("Unresolved reference: util"/"io"). So the imports MUST exist.
+    for fqcn in REQUIRED_IMPORTS:
+        import_line = f"import {fqcn}\n"
+        if import_line.strip() in src:
+            continue
         # Append after the last top-level import line.
-        src = re.sub(
+        new_src = re.sub(
             r"((?:^import [^\n]+\n)+)",
-            lambda m: m.group(1) + "import java.io.FileInputStream\n",
+            lambda m: m.group(1) + import_line,
             src,
             count=1,
             flags=re.MULTILINE,
         )
-        # Fallback: if the regex did not match (no imports at all), prepend.
-        if "import java.io.FileInputStream" not in src:
-            src = "import java.io.FileInputStream\n" + src
+        if new_src != src:
+            src = new_src
+        else:
+            # Fallback: no existing import block at all — prepend.
+            src = import_line + src
 
     # 2. Inject the signingConfigs { ... } block immediately before the
     #    `buildTypes {` block, but inside `android { ... }`. The
