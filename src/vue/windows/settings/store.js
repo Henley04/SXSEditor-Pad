@@ -561,7 +561,6 @@ export const useSettingsStore = defineStore('settings', {
     applySavedSettingsToUI(currentSetting) {
       if (!currentSetting) return;
       this.savedSettings = currentSetting;
-      this.inference.savedSettings = currentSetting;
 
       // Inference provider
       this.inference.provider = currentSetting.inferenceProvider === 'ortweb' ? 'ortweb' : 'ortnode';
@@ -1056,15 +1055,15 @@ export const useSettingsStore = defineStore('settings', {
       this.model.sifiganStatsExists = !!statsExists;
       if (onnxExists) {
         this.model.vocoderTypeHint = statsExists
-          ? 'SiFiGAN 已安装'
-          : 'SiFiGAN 模型已就绪，但统计文件缺失，输入归一化可能不可用';
+          ? t('settings.vocoderTypeHintSifiganInstalled')
+          : t('settings.vocoderTypeHintSifiganStatsMissing');
       } else {
-        this.model.vocoderTypeHint = 'SiFiGAN 未下载，可在模型下载页获取后手动放置';
+        this.model.vocoderTypeHint = t('settings.vocoderTypeHintSifiganNotDownloaded');
       }
       // If sifigan selected but files missing, fall back to default
       if (this.model.vocoderType === 'sifigan' && !onnxExists) {
         this.model.vocoderType = 'default';
-        this.model.vocoderTypeHint = 'SiFiGAN 模型文件不存在，已自动回退到默认 Vocoder';
+        this.model.vocoderTypeHint = t('settings.vocoderTypeHintSifiganFallback');
       }
     },
 

@@ -1,16 +1,15 @@
 /**
- * Vue theme plugin — wraps src/themes/themeInit.js initWindowTheme().
+ * Vue theme plugin — re-exports src/themes/themeInit.js initWindowTheme().
  *
- * Each window's root App component calls this in onMounted; the plugin
- * also provides $initTheme for components that need to (re)apply theme.
+ * Each window's root component imports initWindowTheme directly and calls
+ * it in onMounted with its own local cleanup array (cleaned up in
+ * onUnmounted). This plugin just ensures the function is available app-wide
+ * for any component that needs it.
  */
 import { initWindowTheme } from '../../themes/themeInit.js';
 
-const ipcCleanups = [];
-
 function install(app) {
-  app.config.globalProperties.$initTheme = () => initWindowTheme(ipcCleanups);
-  app.provide('themeCleanups', ipcCleanups);
+  app.config.globalProperties.$initTheme = (cleanups) => initWindowTheme(cleanups);
 }
 
 export default install;
