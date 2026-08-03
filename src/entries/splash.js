@@ -1,13 +1,12 @@
 /**
- * splash_window entry — Vue + existing splash enrichment.
+ * splash_window entry — Vue splash app.
  *
- * Splash is special: it has no themeBootstrap <script> (no themed UI),
- * no tauri-bridge dependency (splash.js reads window.splashAPI which is
- * injected by the Rust side, not the bridge), and the existing splash.js
- * only enriches an already-painted inline SVG. We still mount the Vue
- * shell for consistency, but it renders nothing visible.
+ * Splash keeps its inline SVG in the HTML for instant paint (before JS
+ * loads). This entry mounts a Vue app on #app whose onMounted enriches
+ * the version/build-date text. No tauri-bridge (splash.js reads
+ * window.splashAPI injected by Rust).
  */
-import '../splash.js';
+import SplashApp from '../vue/windows/splash/SplashApp.vue';
+import { createWindowApp } from '../vue/createApp.js';
 
-import { mountVueShell } from '../vue-shell.js';
-mountVueShell();
+createWindowApp(SplashApp).mount('#app');

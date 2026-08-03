@@ -67,6 +67,7 @@
     "@tonejs/midi": "^2.0.28",
     "decibri": "^5.0.0",
     "onnxruntime-web": "^1.27.0",
+    "pinia": "^2.3.1",
     "pinyin-pro": "^3.28.1",
     "vue": "^3.5.12"
   }

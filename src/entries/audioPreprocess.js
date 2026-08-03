@@ -1,8 +1,5 @@
-/**
- * audio_preprocess_window entry — Vue + existing audio preprocess bootstrap.
- */
 import '../tauri-bridge.js';
-import '../audioPreprocess/index.js';
-
-import { mountVueShell } from '../vue-shell.js';
-mountVueShell();
+import AudioPreprocessApp from '../vue/windows/audioPreprocess/AudioPreprocessApp.vue';
+import { createWindowApp } from '../vue/createApp.js';
+import { initI18n } from '../i18n/index.js';
+initI18n().then(() => { createWindowApp(AudioPreprocessApp).mount('#app'); });

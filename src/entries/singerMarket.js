@@ -1,8 +1,8 @@
-/**
- * singer_market_window entry — Vue + existing singer market bootstrap.
- */
 import '../tauri-bridge.js';
-import '../singerMarket.js';
+import SingerMarketApp from '../vue/windows/singerMarket/SingerMarketApp.vue';
+import { createWindowApp } from '../vue/createApp.js';
+import { initI18n } from '../i18n/index.js';
 
-import { mountVueShell } from '../vue-shell.js';
-mountVueShell();
+initI18n().then(() => {
+  createWindowApp(SingerMarketApp).mount('#app');
+});

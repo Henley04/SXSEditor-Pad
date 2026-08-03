@@ -1,10 +1,5 @@
-/**
- * fragment_editor_window entry — Vue + existing fragment editor bootstrap.
- *
- * See src/entries/main.js for the import-order rationale.
- */
 import '../tauri-bridge.js';
-import '../fragmentEditor/index.js';
-
-import { mountVueShell } from '../vue-shell.js';
-mountVueShell();
+import FragmentEditorApp from '../vue/windows/fragmentEditor/FragmentEditorApp.vue';
+import { createWindowApp } from '../vue/createApp.js';
+import { initI18n } from '../i18n/index.js';
+initI18n().then(() => { createWindowApp(FragmentEditorApp).mount('#app'); });

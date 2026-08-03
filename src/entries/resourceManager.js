@@ -1,8 +1,8 @@
-/**
- * resource_manager_window entry — Vue + existing resource manager bootstrap.
- */
 import '../tauri-bridge.js';
-import '../resourceManager.js';
+import ResourceManagerApp from '../vue/windows/resourceManager/ResourceManagerApp.vue';
+import { createWindowApp } from '../vue/createApp.js';
+import { initI18n } from '../i18n/index.js';
 
-import { mountVueShell } from '../vue-shell.js';
-mountVueShell();
+initI18n().then(() => {
+  createWindowApp(ResourceManagerApp).mount('#app');
+});
