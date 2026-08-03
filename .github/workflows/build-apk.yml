@@ -124,9 +124,6 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          # Gradle wrapper cache — saves the per-job dependency resolution
-          # (~30s) and avoids re-downloading gradle distributions.
-          cache: 'gradle'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -326,7 +323,6 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
