@@ -8,8 +8,8 @@
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",
-    "build:web": "webpack --mode production",
-    "dev:web": "webpack serve --mode development",
+    "build:web": "vite build",
+    "dev:web": "vite",
     "lint": "eslint src test scripts *.config.js --ext .js",
     "test": "mocha --require ./test/setup.js \"test/**/*.test.js\" --timeout 30000 --reporter spec",
     "test:ci": "mocha --require ./test/setup.js \"test/**/*.test.js\" --timeout 30000 --reporter spec",
@@ -42,22 +42,17 @@
     "@babel/core": "^7.29.0",
     "@babel/preset-env": "^7.29.2",
     "@babel/register": "^7.28.6",
+    "@rollup/plugin-commonjs": "^29.0.3",
     "@tauri-apps/cli": "^2.0.0",
-    "babel-loader": "^10.1.1",
+    "@vitejs/plugin-vue": "^5.1.4",
     "chai": "^6.2.2",
-    "copy-webpack-plugin": "^14.0.0",
-    "css-loader": "^6.11.0",
     "eslint": "^9.39.4",
     "globals": "^17.7.0",
-    "html-webpack-plugin": "^5.6.3",
     "jsdom": "^29.1.1",
-    "mini-css-extract-plugin": "^2.10.2",
     "mocha": "^11.7.6",
     "nyc": "^18.0.0",
     "sinon": "^21.1.2",
-    "webpack": "^5.98.0",
-    "webpack-cli": "^7.0.3",
-    "webpack-dev-server": "^5.2.1"
+    "vite": "^5.4.8"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -72,6 +67,7 @@
     "@tonejs/midi": "^2.0.28",
     "decibri": "^5.0.0",
     "onnxruntime-web": "^1.27.0",
-    "pinyin-pro": "^3.28.1"
+    "pinyin-pro": "^3.28.1",
+    "vue": "^3.5.12"
   }
 }

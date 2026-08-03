@@ -82,6 +82,9 @@ module.exports = [
             'src/audio/wavEncoder.js',
             'src/utils/escapeHtml.js',
             'src/utils/gpuCache.js',
+            // vite.config.js uses ESM import/export, falls through to the
+            // base ESM config above.
+            'vite.config.js',
         ],
         languageOptions: {
             sourceType: 'commonjs',
@@ -133,6 +136,7 @@ module.exports = [
             'src/icons/**/*.js',
             'src/spa/**/*.js',
             'src/tauri-bridge.js',
+            'src/vue-shell.js',
             'src/singerCreator.js',
             'src/settings.js',
             'src/modelDownload.js',

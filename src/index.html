@@ -2,6 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>SXSEditor</title>
     <script src="./themes/themeBootstrap.js"></script>
   </head>
@@ -67,5 +68,7 @@
          loaded dynamically on first use via src/inference/webnn/ortSetup.js
          loadOrtScript(). The .wasm files are still copied alongside by
          webpack CopyPlugin (webpack.renderer.config.js). -->
+  <div id="vue-root"></div>
+  <script type="module" src="./entries/main.js"></script>
   </body>
 </html>
