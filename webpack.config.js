@@ -72,13 +72,23 @@ module.exports = {
     new MiniCssExtractPlugin({
       filename: '[name]/style.css',
     }),
-    // Generate HTML files for each window with the correct bundle
+    // Generate HTML files for each window with the correct bundle.
+    // viewport meta is injected here (rather than in each src/*.html) so all
+    // 10 windows get a consistent mobile viewport in one place. Without it,
+    // Android WebView defaults to a ~980px layout viewport, shrinking the
+    // whole UI and breaking every @media (max-width) breakpoint below that —
+    // the direct cause of "buttons overlap on phone". viewport-fit=cover
+    // lets content extend into the notch area (paired with safe-area insets
+    // already declared in pad.css).
     ...Object.entries(HTML_TEMPLATES).map(([name, template]) => new HtmlWebpackPlugin({
       template: path.resolve(__dirname, template),
       filename: `${name}/index.html`,
       chunks: [name],
       inject: 'body',
       scriptLoading: 'blocking',
+      meta: {
+        viewport: 'width=device-width, initial-scale=1.0, viewport-fit=cover',
+      },
     })),
     new CopyPlugin({
       patterns: [

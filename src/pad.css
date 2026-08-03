@@ -91,8 +91,22 @@ select,
 
 /* ---------- Responsive toolbar ---------- */
 
+/* `#toolbar` is pinned to `height: 44px` in index.css/components.css/
+   fragmentEditor.css. Once `flex-wrap: wrap` kicks in below 900px the
+   wrapped second row overflows that 44px and the next sibling
+   (`#main-content`, `overflow: hidden`) clips/overlaps it — this is the
+   "buttons overlap on phone" failure. `height: auto` lets the toolbar grow
+   to fit its wrapped rows; `min-height` keeps the single-row baseline.
+   `overflow-x: auto` is a fallback so a single long row scrolls instead of
+   wrapping into a tall stack on very narrow phones. */
 @media (max-width: 900px) {
-  #toolbar { flex-wrap: wrap; gap: 4px; }
+  #toolbar {
+    flex-wrap: wrap;
+    gap: 4px;
+    height: auto;
+    min-height: 44px;
+    overflow-x: auto;
+  }
   .toolbar-group { flex-wrap: wrap; }
   .toolbar-divider { display: none; }
   .toolbar-group button { padding: 8px 12px; font-size: 14px; }
@@ -100,6 +114,36 @@ select,
 
 @media (max-width: 600px) {
   .toolbar-group button { padding: 7px 10px; font-size: 13px; margin: 2px 3px; }
+}
+
+/* ---------- Phone shell (≤700px) ----------
+   On a ~360-414px phone the side-by-side `#singer-panel` (min-width 200px)
+   + `#fragment-timeline` would leave the timeline ~120-200px — too narrow to
+   be usable and forces horizontal squeeze. Stack them vertically instead:
+   singer list on top (capped height, scrolls internally), timeline below
+   (gets the majority of the viewport). The whole `#main-content` also
+   becomes the vertical scroll container so nothing is clipped when the
+   soft keyboard or a tall toolbar eats vertical space. */
+@media (max-width: 700px) {
+  #main-content {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  #singer-panel {
+    width: 100%;
+    min-width: 0;
+    max-height: 38vh;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  #singer-list {
+    /* already overflow-y: auto above; cap so the timeline stays visible. */
+    max-height: calc(38vh - 36px);
+  }
+  #fragment-timeline {
+    flex: 1;
+    min-height: 50vh;
+  }
 }
 
 /* ---------- Range sliders (large, touch-friendly) ---------- */
@@ -129,20 +173,39 @@ input[type="range"]::-moz-range-thumb {
 
 /* ---------- Main content / scroll regions ---------- */
 
-#main-content,
-#singer-panel,
+/* `touch-action: pan-y` alone does NOT make an `overflow: hidden` container
+   scrollable — it only permits the browser to handle vertical gestures. The
+   base sheets (index.css / singerCreator.css / ...) set `overflow: hidden` on
+   these containers to clip canvas/absolutely-positioned content, which also
+   kills vertical scrolling on phone where content overflows the small
+   viewport. Adding `overflow-y: auto` here turns the gesture permission into
+   an actual scroll. `#fragment-timeline` is intentionally excluded — it owns
+   a canvas that handles its own pointer gestures, scrolling it would fight
+   the canvas. `#fragment-canvas-container` likewise stays `overflow: hidden`
+   (it clips the absolutely-positioned canvas to its box). */
 #singer-list,
-#fragment-timeline,
-.settings-layout,
+.settings-content,
 .settings-sidebar,
 .sidebar-nav,
 .theme-editor-panel,
 .fragment-editor-container,
 .audio-preprocess-container,
-.singer-creator-container,
+.singer-creator-container #left-panel,
 .singer-market-container,
 .rm-container,
 .dialog-content {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  overflow-y: auto;
+}
+
+/* Containers that only need the gesture permission (flex parents whose
+   children handle their own scrolling). Kept here so `touch-action: pan-y`
+   still applies without forcing `overflow-y: auto` on them. */
+#main-content,
+#singer-panel,
+#fragment-timeline {
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;

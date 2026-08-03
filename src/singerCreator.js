@@ -4,6 +4,7 @@ import { t, initI18n, applyLocale, getLocale } from './i18n/index.js';
 import { initWindowTheme } from './themes/themeInit.js';
 import { showAlertDialog } from './alertDialog.js';
 import { createIcon, hydrateIcons } from './icons/iconHelper.js';
+import { navigate } from './spa/router.js';
 
 initI18n().then(() => {
   applyLocale();
@@ -204,7 +205,18 @@ document.addEventListener('mouseup', () => {
 btnCancel.addEventListener('click', () => {
   stopPreviewPlayback();
   cleanupListeners();
-  window.close();
+  // The singer-creator view is an SPA route (singer_creator_window/index.html)
+  // inside the single Tauri WebView, NOT a separate OS window. `window.close()`
+  // is a no-op here (there is no window to close) — that is why "取消" appeared
+  // to do nothing on Android. Navigate back to the main route instead, matching
+  // how the main window opened this view via `navigate('singer-creator', ...)`.
+  // `history.back()` is the fallback so a deep-link entry (no SPA history)
+  // still escapes; if even that fails (e.g. blocked by the host), navigate
+  // forward to `main` explicitly.
+  if (typeof window !== 'undefined' && window.history && window.history.length > 1) {
+    try { window.history.back(); return; } catch (_) { /* fall through */ }
+  }
+  navigate('main');
 });
 
 document.getElementById('btn-save').addEventListener('click', () => {
