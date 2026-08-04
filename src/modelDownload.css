@@ -5,7 +5,12 @@ body {
   color: var(--fg-secondary);
   padding: var(--space-4) var(--space-5);
   margin: 0;
-  overflow-y: auto;
+  /* overflow-y: auto is critical — pad.css sets `html, body { overflow: hidden }`
+     globally which would override this if specificity were equal. Use !important
+     to ensure the model download page scrolls on mobile (the content is too
+     long for a single screen on phones). */
+  overflow-y: auto !important;
+  overscroll-behavior-y: auto;
   user-select: none;
   display: flex;
   flex-direction: column;
