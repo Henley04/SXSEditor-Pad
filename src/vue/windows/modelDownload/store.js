@@ -60,7 +60,14 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
   });
 
   // ==================== Precision / revision ====================
-  const currentPrecision = ref('int8-npu');
+  // Default precision: 'int8' on mobile (NPU/DirectML not available),
+  // 'int8-npu' on desktop (has NPU/DirectML acceleration).
+  function getDefaultPrecision() {
+    const ua = navigator.userAgent || '';
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua);
+    return isMobile ? 'int8' : 'int8-npu';
+  }
+  const currentPrecision = ref(getDefaultPrecision());
   // 'latest' = auto-pick newest tag, or a specific tag (e.g. 'v1')
   const currentRevision = ref('latest');
   // tags fetched from ModelScope (branches NOT shown)
@@ -363,7 +370,8 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
   }
 
   function handlePrecision(precision) {
-    const newPrecision = precision || 'int8-npu';
+    const defaultP = getDefaultPrecision();
+    const newPrecision = precision || defaultP;
     const changed = newPrecision !== currentPrecision.value;
     currentPrecision.value = newPrecision;
     // Resolve the initial-precision promise so the first refreshVersionInfo()

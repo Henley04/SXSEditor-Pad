@@ -143,12 +143,16 @@
       </div>
     </div>
   </div>
+
+  <!-- First-launch onboarding overlay (intro + hardware check + model download) -->
+  <OnboardingOverlay />
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
 import { initWindowTheme } from '../../../themes/themeInit.js';
 import * as spa from '../../../spa/router.js';
+import OnboardingOverlay from './OnboardingOverlay.vue';
 
 // Cleanup functions collected during the component's life (theme:changed
 // listener registered by initWindowTheme, etc.). The renderer's own IPC
@@ -237,17 +241,55 @@ onMounted(async () => {
   initWindowTheme(cleanups);
 
   // Attempt to set the window to fullscreen on mobile to hide the Android
-  // status bar. This is a no-op on desktop (the window is already maximized
-  // via tauri.conf.json). On Android, `setFullscreen(true)` sets immersive
-  // mode so the status bar doesn't overlap with toolbar content.
+  // status bar. Tauri 2's `setFullscreen` may not be implemented for Android
+  // (the Android window plugin is incomplete). Try it anyway as a no-op on
+  // platforms that don't support it — the CSS safe-area fallback below
+  // handles the status bar area if fullscreen isn't available.
   try {
     const { getCurrentWindow } = await import('@tauri-apps/api/window');
     const win = getCurrentWindow();
     await win.setFullscreen(true);
   } catch (_) {
-    // Tauri API might not be available in dev/web mode — safe to ignore.
-    // CSS safe-area-inset fallback handles the status bar area.
+    // Tauri API might not be available in dev/web mode or not implemented
+    // for Android. Fall through to CSS/JS safe-area handling.
   }
+
+  // CSS fallback: if env(safe-area-inset-top) returns 0 (common on Android
+  // where Tauri doesn't set the status bar insets), detect the status bar
+  // height by comparing window.innerHeight with screen.height, and inject
+  // it as a CSS custom property on :root so the toolbar padding-top uses
+  // the real value instead of 0.
+  function applySafeAreaTop() {
+    const screenH = window.screen ? window.screen.height : 0;
+    const innerH = window.innerHeight;
+    // On Android, the status bar height ≈ screen.height - innerHeight when
+    // the app is not fullscreen. If the status bar is hidden (fullscreen),
+    // the difference is 0 and env() should also work.
+    let safeTop = 0;
+    if (screenH > innerH) {
+      safeTop = screenH - innerH;
+    }
+    // Also check CSS env() value (may be nonzero on iOS / properly configured
+    // Android). Use the larger of the two.
+    const envTop = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--safe-area-top') || '0',
+      10
+    );
+    const effectiveTop = Math.max(safeTop, envTop, 0);
+    if (effectiveTop > 0) {
+      document.documentElement.style.setProperty(
+        '--safe-area-top',
+        effectiveTop + 'px'
+      );
+    }
+  }
+  applySafeAreaTop();
+  window.addEventListener('resize', applySafeAreaTop);
+  window.addEventListener('orientationchange', () => setTimeout(applySafeAreaTop, 100));
+  cleanups.push(() => {
+    window.removeEventListener('resize', applySafeAreaTop);
+    window.removeEventListener('orientationchange', applySafeAreaTop);
+  });
 
   // Overflow menu / about dialog listeners.
   document.addEventListener('click', onDocClick);
