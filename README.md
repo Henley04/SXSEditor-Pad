@@ -37,8 +37,8 @@ Supported singing languages: **English**, **Chinese (Mandarin)**, and **Japanese
 | Component | Technology |
 |-----------|------------|
 | Framework | [Tauri v2](https://v2.tauri.app/) (Rust + WebView) |
-| Frontend | Vanilla JavaScript, CSS3, HTML5 |
-| Bundler | Webpack 5 with HtmlWebpackPlugin |
+| Frontend | Vue 3, Pinia, CSS3, HTML5 |
+| Bundler | Vite 5 |
 | Model Runtime | ONNX Runtime Web (WebNN / WASM) |
 | Additional AI | TensorFlow.js (Basic Pitch) |
 | Backend | Rust with Tauri plugins |
@@ -78,7 +78,7 @@ npm run ios:build
 ## Development
 
 ```bash
-# Start webpack dev server
+# Start Vite dev server
 npm run dev:web
 
 # In another terminal, start Tauri dev
@@ -103,24 +103,26 @@ SXSEditor-Pad/
 │   ├── themes/             # Theme system
 │   ├── i18n/               # Internationalization
 │   ├── icons/              # Icon system
-│   ├── main/               # Main process logic
+│   ├── vue/                # Vue components
 │   └── utils/              # Utilities
 ├── src-tauri/              # Tauri (Rust) backend
 │   ├── src/                # Rust source code
 │   └── tauri.conf.json     # Tauri configuration
 ├── docs/                   # Documentation
 ├── test/                   # Test suite
-├── webpack.config.js       # Webpack configuration
+├── vite.config.js          # Vite configuration
 └── package.json            # Project metadata
 ```
 
 ## Model Inference
 
-SXSEditor-Pad uses ONNX Runtime Web for model inference, supporting:
+SXSEditor-Pad uses native ONNX Runtime for model inference with platform-specific acceleration:
 
-- **WebNN API** - NPU/GPU acceleration on compatible devices
-- **WASM** - CPU fallback for universal compatibility
-- **DirectML** - GPU acceleration on Windows (desktop mode)
+- **Android** - NNAPI acceleration
+- **iOS** - CoreML acceleration
+- **Desktop** - CPU/WebNN/DirectML depending on platform
+
+Additional AI features use TensorFlow Lite (Basic Pitch for audio-to-MIDI conversion).
 
 Models are downloaded from [ModelScope](https://modelscope.cn) and cached locally.
 
