@@ -56,7 +56,7 @@
         <option value="fp32">{{ $t('settings.precisionFp32') }}</option>
         <option value="fp16">{{ $t('settings.precisionFp16') }}</option>
         <option value="int8">{{ $t('settings.precisionInt8') }}</option>
-        <option value="int8-npu">{{ $t('settings.precisionInt8Npu') }}</option>
+        <option v-if="!isMobile" value="int8-npu">{{ $t('settings.precisionInt8Npu') }}</option>
       </select>
       <p class="hint">{{ $t('settings.modelPrecisionHint') }}</p>
       <div class="model-status-list">
@@ -119,7 +119,9 @@
       <p class="hint">{{ $t('settings.japaneseVocalizationHint') }}</p>
     </div>
 
-    <div class="setting-group">
+    <!-- Desktop-only: DML VRAM release options (not applicable on mobile,
+         where GPU memory is managed by the OS and there's no DirectML). -->
+    <div class="setting-group" v-if="!isMobile">
       <label class="device-mode-radio">
         <input type="checkbox" :checked="store.model.releaseDmlVramAfterSynthesis"
           @change="store.setReleaseDmlVramAfterSynthesis($event.target.checked)">
@@ -129,7 +131,7 @@
       <p class="hint">{{ $t('settings.releaseDmlVramAfterSynthesisHint') }}</p>
     </div>
 
-    <div class="setting-group">
+    <div class="setting-group" v-if="!isMobile">
       <label class="device-mode-radio">
         <input type="checkbox" :checked="store.model.releaseDiffStepBeforeVocoder"
           @change="store.setReleaseDiffStepBeforeVocoder($event.target.checked)">
@@ -147,6 +149,12 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { useSettingsStore } from './store.js';
 const store = useSettingsStore();
+
+const isMobile = computed(() => {
+  const ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua);
+});
 </script>

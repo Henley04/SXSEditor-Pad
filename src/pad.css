@@ -71,11 +71,17 @@ select,
   padding-right: var(--safe-area-right);
 }
 
+/* Uniform button sizing: all toolbar buttons get the same height, padding,
+   and flex centering so they look aligned regardless of text length. */
 .toolbar-group button {
   padding: 10px 16px;
   font-size: 15px;
   border-radius: 10px;
   margin: 3px 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   /* Generous hit area without enlarging the visual button. */
   position: relative;
 }
@@ -157,17 +163,33 @@ select,
   .version-badge { font-size: 10px; padding: 2px 6px; }
 }
 
-/* Very small phones (≤420px): collapse non-essential toolbar groups to
-   make room for transport + overflow menu. Primary actions (play/pause/
-   stop, time, BPM) stay visible; export / audio-to-midi / midi-import /
-   singer-market / version move into the overflow menu (see MainWindowApp). */
+/* Very small phones (≤420px): switch ALL toolbar buttons to icon-only mode
+   so every button remains visible and accessible. `font-size: 0` hides the
+   text node while the SVG icon (prepended by hydrateIcons) keeps its own
+   width/height. This replaces the old `display: none` on
+   `.toolbar-group--overflow-candidate` which hid buttons entirely and
+   removed actions like autoshift/export/midi-import from the user's reach.
+   The overflow menu (three-dot) still surfaces Settings/Resource/About. */
 @media (max-width: 420px) {
-  #toolbar .toolbar-group--overflow-candidate { display: none; }
   .toolbar-group button {
-    padding: 5px 6px;
-    font-size: 11px;
+    padding: 6px;
+    font-size: 0;
     margin: 1px;
+    min-width: 32px;
+    min-height: 32px;
   }
+  /* SVG icons stay visible because they have their own width/height attrs. */
+  .toolbar-group button svg,
+  .toolbar-group button .icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+  }
+  /* Time/BPM displays: shrink to absolute minimum. */
+  #time-display { min-width: 48px; font-size: 10px; padding: 1px 3px; }
+  #toolbar input[type="number"] { width: 32px; }
+  #bpm-input { width: 36px; }
+  .version-badge { display: none; }
 }
 
 /* ---------- Pad / tablet enhanced touch targets (≥768px) ----------

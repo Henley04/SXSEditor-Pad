@@ -3,6 +3,10 @@
   #section-inference markup: provider select, current-hardware info, device
   mode radios (smart/manual/advanced), device select, WebNN/NPU/GPU status
   bar, and the advanced per-model-group device mapping.
+  On mobile (Tauri/Android), only the provider select and current-hardware
+  info are relevant — device mode radios, device select, WebNN/NPU/GPU
+  status, and advanced per-model mapping are desktop-only (DirectML/GPU
+  hardware selection) and hidden via v-if="!isMobile".
 -->
 <template>
   <div class="settings-section">
@@ -12,7 +16,9 @@
         <option value="ortnode">{{ $t('settings.inferenceProviderOrtnode') }}</option>
         <option value="ortweb">{{ $t('settings.inferenceProviderOrtweb') }}</option>
       </select>
-      <p class="hint">{{ store.inferenceProviderHintText }}</p>
+      <p class="hint">{{ isMobile
+        ? 'ONNX Runtime Mobile with NNAPI/CoreML acceleration. Select ortweb for CPU-only fallback.'
+        : store.inferenceProviderHintText }}</p>
     </div>
 
     <div class="setting-group hardware-info">
@@ -22,7 +28,8 @@
       </div>
     </div>
 
-    <div class="setting-group">
+    <!-- Desktop-only: device mode radios (smart/manual/advanced) -->
+    <div class="setting-group" v-if="!isMobile">
       <label>{{ $t('settings.deviceMode') }}</label>
       <div class="device-mode-radios">
         <label class="device-mode-radio">
@@ -49,7 +56,8 @@
       </div>
     </div>
 
-    <div class="setting-group">
+    <!-- Desktop-only: device select (DirectML/GPU device enumeration) -->
+    <div class="setting-group" v-if="!isMobile">
       <label for="inferenceDevice">{{ $t('settings.inferenceHardware') }}</label>
       <select id="inferenceDevice" :disabled="store.deviceSelectDisabled"
         :value="store.inference.preferredDeviceId" @change="store.setPreferredDeviceId($event.target.value)">
@@ -58,7 +66,8 @@
       <p class="hint">{{ $t('settings.inferenceHardwareHint') }}</p>
     </div>
 
-    <div class="setting-group">
+    <!-- Desktop-only: WebNN/NPU/GPU status bar -->
+    <div class="setting-group" v-if="!isMobile">
       <div class="webnn-status-bar">
         <span class="webnn-status-label">WebNN:</span>
         <span class="webnn-status-value" :class="statusClass(store.inference.webnnState)">{{ store.webnnStatusText }}</span>
@@ -71,7 +80,8 @@
       </div>
     </div>
 
-    <div v-show="store.advancedSettingsVisible" class="setting-group">
+    <!-- Desktop-only: advanced per-model-group device mapping -->
+    <div v-show="store.advancedSettingsVisible && !isMobile" class="setting-group">
       <label>{{ $t('settings.advancedHardwareSettings') }}</label>
       <p class="hint">{{ $t('settings.selectDeviceForModelGroup') }}</p>
       <div class="model-device-mapping">
@@ -89,9 +99,15 @@
 </template>
 
 <script setup>
+import { computed } from 'vue';
 import { useSettingsStore, MODEL_GROUPS } from './store.js';
 const store = useSettingsStore();
 const modelGroups = MODEL_GROUPS;
+
+const isMobile = computed(() => {
+  const ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua);
+});
 
 function statusClass(state) {
   if (state === 'available') return 'status-available';
