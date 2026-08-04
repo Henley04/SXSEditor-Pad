@@ -3,7 +3,7 @@ body {
   -webkit-font-smoothing: antialiased;
   background: var(--bg-app);
   color: var(--fg-secondary);
-  padding: var(--space-6) var(--space-8);
+  padding: var(--space-4) var(--space-5);
   margin: 0;
   overflow: hidden;
   user-select: none;
@@ -11,6 +11,40 @@ body {
   flex-direction: column;
   height: 100vh;
   box-sizing: border-box;
+}
+
+/* Phone: compact padding. */
+@media (max-width: 600px) {
+  body {
+    padding: var(--space-3);
+  }
+  .header h1 {
+    font-size: var(--font-lg);
+  }
+  .btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    min-height: 40px;
+  }
+  .actions {
+    flex-wrap: wrap;
+  }
+  .actions .btn {
+    flex: 1;
+    min-width: 80px;
+  }
+}
+
+/* Pad: enlarged touch targets. */
+@media (min-width: 768px) {
+  body {
+    padding: var(--space-6) var(--space-8);
+  }
+  .btn {
+    padding: var(--space-3) var(--space-6);
+    font-size: var(--font-base);
+    min-height: 48px;
+  }
 }
 
 .header {

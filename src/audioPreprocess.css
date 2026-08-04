@@ -285,3 +285,59 @@ html, body {
   color: var(--fg-secondary);
   font-weight: 500;
 }
+
+/* ==================== Responsive ==================== */
+
+/* Phone: compact toolbar buttons. */
+@media (max-width: 600px) {
+  #toolbar {
+    height: auto;
+    min-height: 40px;
+    flex-wrap: wrap;
+    padding: 0 6px;
+  }
+  .btn-toolbar {
+    padding: 4px 8px;
+    font-size: 12px;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #page-title {
+    font-size: var(--font-sm);
+  }
+  #waveform-header,
+  #midi-header {
+    padding: var(--space-2) var(--space-3);
+    min-height: 28px;
+  }
+  .section-title,
+  .file-info {
+    font-size: 10px;
+  }
+  /* Scrollbars: thinner on phones. */
+  .scrollbar-horizontal { height: 8px; }
+  .scrollbar-vertical { width: 8px; }
+  #midi-hscroll .scrollbar-thumb { height: 4px; min-width: 16px; }
+  #midi-vscroll .scrollbar-thumb { width: 4px; min-height: 16px; }
+}
+
+/* Pad: enlarged touch targets. */
+@media (min-width: 768px) {
+  .btn-toolbar {
+    padding: 8px 14px;
+    font-size: 15px;
+    min-height: 44px;
+  }
+  #waveform-header,
+  #midi-header {
+    min-height: 36px;
+    padding: var(--space-3) var(--space-5);
+  }
+  /* Scrollbars: wider for finger drag on tablet. */
+  .scrollbar-horizontal { height: 16px; }
+  .scrollbar-vertical { width: 16px; }
+  #midi-hscroll .scrollbar-thumb { height: 12px; min-width: 36px; }
+  #midi-vscroll .scrollbar-thumb { width: 12px; min-height: 36px; }
+}

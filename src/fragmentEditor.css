@@ -1079,3 +1079,116 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ==================== Responsive ==================== */
+
+/* Phone (≤600px): collapse inspector, shrink toolbar, compact buttons. */
+@media (max-width: 600px) {
+  #toolbar {
+    height: auto;
+    min-height: 40px;
+    flex-wrap: wrap;
+    padding: 0 6px;
+    gap: 3px;
+  }
+  #toolbar button {
+    padding: 4px 6px;
+    font-size: 11px;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #toolbar .btn-param,
+  #toolbar .btn-pitch-tool,
+  #toolbar .btn-shortcuts {
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+  #fragment-name {
+    font-size: var(--font-sm);
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Collapse inspector panel on phones — piano roll gets full width. */
+  #main-content {
+    grid-template-columns: 60px 1fr 0 0;
+  }
+  #piano-keys-container {
+    width: 60px;
+    min-width: 60px;
+  }
+  .inspector-panel {
+    display: none;
+  }
+  .inspector-resize {
+    display: none;
+  }
+  /* Status bar: hide non-essential items. */
+  .statusbar .s-div:not(:first-child) {
+    display: none;
+  }
+  .statusbar .s-item:not(:first-child):not(:nth-child(2)) {
+    display: none;
+  }
+  .param-panel-header {
+    height: auto;
+    min-height: 32px;
+    flex-wrap: wrap;
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  .param-lane-tabs {
+    margin-left: 0;
+    gap: 1px;
+  }
+  .param-lane-tab {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+  .shortcuts-panel {
+    width: 94%;
+    max-height: 70vh;
+  }
+}
+
+/* Pad (≥768px): enlarge touch targets for comfortable tablet use. */
+@media (min-width: 768px) {
+  #toolbar button {
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--font-md);
+    min-height: 44px;
+  }
+  #toolbar .btn-param,
+  #toolbar .btn-pitch-tool {
+    padding: 6px 12px;
+    font-size: var(--font-base);
+  }
+  #toolbar .btn-shortcuts {
+    padding: 4px 10px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+  /* Wider inspector panel on tablets for touch interaction. */
+  #main-content {
+    grid-template-columns: 80px 1fr 4px 260px;
+  }
+  /* Larger phoneme grid touch targets. */
+  .pho {
+    padding: 8px 2px;
+    font-size: var(--font-sm);
+  }
+  /* Larger param lane tabs for finger touch. */
+  .param-lane-tab {
+    padding: 6px 14px;
+    font-size: var(--font-base);
+    min-height: 36px;
+  }
+  .btn-param-toggle {
+    width: 36px;
+    height: 32px;
+    font-size: 16px;
+  }
+}

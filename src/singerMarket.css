@@ -107,7 +107,11 @@
   position: relative;
   display: flex;
   align-items: center;
-  min-width: 280px;
+  /* Use responsive min-width: 280px is too wide for 360px phones.
+     On small screens the flex: 1 behaviour already grows the search
+     to fill available space; the min-width just needs to not force
+     overflow. */
+  min-width: 0;
   flex: 1;
   max-width: 480px;
 }
@@ -800,5 +804,93 @@
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+/* ==================== Responsive ==================== */
+
+/* Phone: compact layout, smaller grid, tighter spacing. */
+@media (max-width: 600px) {
+  #toolbar {
+    height: auto;
+    min-height: 44px;
+    flex-wrap: wrap;
+    padding: 0 var(--space-3);
+  }
+  #toolbar button {
+    padding: 5px 8px;
+    font-size: 12px;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #page-title {
+    font-size: var(--font-base);
+  }
+  .auth-status {
+    font-size: 10px;
+  }
+  #filter-bar {
+    padding: var(--space-2) var(--space-3);
+    gap: var(--space-2);
+  }
+  #search-input {
+    padding: 5px 10px 5px 28px;
+    font-size: 13px;
+  }
+  .tag-filter-wrap {
+    max-width: 100%;
+  }
+  #main-content {
+    padding: var(--space-3);
+  }
+  .singer-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--space-3);
+  }
+  .singer-card {
+    padding: var(--space-3);
+    min-height: 140px;
+  }
+  .singer-avatar {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+  .pagination button {
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+  .modal-dialog {
+    min-width: 0;
+    max-width: 94%;
+    padding: 16px;
+  }
+  .modal-dialog-wide {
+    min-width: 0;
+    max-width: 94%;
+  }
+}
+
+/* Pad: enlarged touch targets for comfortable tablet use. */
+@media (min-width: 768px) {
+  #toolbar button {
+    padding: 8px 14px;
+    font-size: 15px;
+    min-height: 44px;
+  }
+  .singer-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--space-5);
+  }
+  .singer-card {
+    padding: var(--space-5);
+    min-height: 220px;
+  }
+  .pagination button {
+    padding: 8px 18px;
+    font-size: var(--font-base);
+    min-height: 44px;
   }
 }
