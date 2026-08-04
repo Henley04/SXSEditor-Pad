@@ -202,7 +202,18 @@ export default {
     saveAndExit: 'Save & Exit',
     discardChanges: "Don't Save",
     discardCancel: 'Cancel',
-    dragToSeek: 'Drag to seek'
+    dragToSeek: 'Drag to seek',
+    // Mobile / small-screen toolbar overflow menu — surfaces the items that
+    // normally live in the desktop OS menu bar (File → Settings, Resource
+    // Manager, About) so touch users can still reach them.
+    more: 'More',
+    settings: 'Settings',
+    resourceManager: 'Resource Manager',
+    about: 'About',
+    aboutTitle: 'About SXSEditor',
+    aboutVersion: 'Version',
+    aboutDescription: 'AI Singing Voice Synthesis Workbench based on ONNX Runtime / DirectML',
+    closeAbout: 'Close'
   },
   fragment: {
     title: 'Fragment Editor',

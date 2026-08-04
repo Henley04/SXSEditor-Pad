@@ -110,10 +110,41 @@ select,
   .toolbar-group { flex-wrap: wrap; }
   .toolbar-divider { display: none; }
   .toolbar-group button { padding: 8px 12px; font-size: 14px; }
+  /* Compress fixed-width toolbar inputs so the row still fits without
+     horizontal scroll on tablet-class viewports. */
+  #toolbar input[type="number"] { width: 44px; padding: var(--space-1) var(--space-2); }
+  #bpm-input { width: 52px; }
+  #time-display { min-width: 84px; font-size: var(--font-base); padding: var(--space-1) 6px; }
+  #toolbar label { gap: var(--space-1); font-size: var(--font-sm); }
+  /* Reveal the mobile overflow menu on small/touch viewports — surfaces
+     Settings / Resource Manager / About (the desktop OS menu entries). */
+  #btn-toolbar-overflow {
+    display: inline-flex;
+    min-width: var(--touch-target-min-w);
+    min-height: var(--touch-target-min);
+  }
 }
 
 @media (max-width: 600px) {
   .toolbar-group button { padding: 7px 10px; font-size: 13px; margin: 2px 3px; }
+  /* On phones: drop the BPM/time-signature label text so only the input
+     remains — saves ~50px of horizontal real estate per group. The numeric
+     value is still visible in the #bpm-display-badge inside the timeline. */
+  #toolbar label { font-size: 0; }
+  #toolbar label input[type="number"],
+  #toolbar label input[type="checkbox"] { font-size: 13px; }
+  #toolbar input[type="number"] { width: 40px; }
+  #bpm-input { width: 48px; }
+  #time-display { min-width: 72px; font-size: 12px; }
+  .version-badge { font-size: 11px; padding: 2px 8px; }
+}
+
+/* Very small phones (≤420px): collapse non-essential toolbar groups to
+   make room for transport + overflow menu. Primary actions (play/pause/
+   stop, time, BPM) stay visible; export / audio-to-midi / midi-import /
+   singer-market / version move into the overflow menu (see MainWindowApp). */
+@media (max-width: 420px) {
+  #toolbar .toolbar-group--overflow-candidate { display: none; }
 }
 
 /* ---------- Phone shell (≤700px) ----------
@@ -130,8 +161,13 @@ select,
     overflow-y: auto;
   }
   #singer-panel {
+    /* Override the desktop flex-basis (240px) so the panel becomes a full-
+       width stacked block on phones — gives the timeline the rest of the
+       viewport height instead of squeezing both into a 360px-wide column. */
+    flex: 0 0 auto;
     width: 100%;
     min-width: 0;
+    max-width: none;
     max-height: 38vh;
     border-right: none;
     border-bottom: 1px solid var(--border-subtle);
@@ -191,6 +227,10 @@ input[type="range"]::-moz-range-thumb {
 .fragment-editor-container,
 .audio-preprocess-container,
 .singer-creator-container #left-panel,
+.singer-creator-window #left-panel,
+#singer-creator-app #left-panel,
+#app.singer-creator #left-panel,
+#left-panel,
 .singer-market-container,
 .rm-container,
 .dialog-content {

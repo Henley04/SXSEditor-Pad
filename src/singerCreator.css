@@ -458,15 +458,43 @@ html, body {
 @media (max-width: 700px) {
   #main-content {
     flex-direction: column;
+    /* Allow vertical scroll on the whole content area so the left form
+       panel can be panned even when it overflows the viewport (e.g. when
+       the soft keyboard is open on a phone). */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
   #left-panel {
     width: 100%;
-    max-height: 50vh;
+    /* Use a percentage-based max-height so the form gets reasonable space
+       while still letting the preview panel peek below. The whole
+       #main-content scrolls if the form is taller than this cap. */
+    max-height: 60vh;
     border-right: none;
     border-bottom: 1px solid var(--border-subtle);
+    flex: 0 0 auto;
   }
   #right-panel {
     padding: var(--space-5);
+    flex: 0 0 auto;
+    min-height: 40vh;
+  }
+}
+
+/* Very small phones: stack preview below form but make sure the form
+   scrolls naturally inside #main-content (which is the scroll container
+   at this breakpoint). Avoids the "stuck" feeling where the form is
+   taller than the viewport but cannot be panned. */
+@media (max-width: 480px) {
+  #left-panel {
+    /* Let the form take its natural height; #main-content scrolls. */
+    max-height: none;
+    padding: var(--space-5);
+  }
+  #right-panel {
+    min-height: 50vh;
+    padding: var(--space-4);
   }
 }
 

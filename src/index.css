@@ -20,6 +20,11 @@
   box-shadow: var(--shadow-sm);
   position: relative;
   z-index: 10;
+  /* `min-width: 0` lets flex children shrink proportionally so a long row
+     compresses instead of pushing the toolbar's width past the viewport.
+     Horizontal overflow is handled by pad.css media queries
+     (flex-wrap + overflow-x: auto on small screens). */
+  min-width: 0;
 }
 
 #toolbar::before {
@@ -36,6 +41,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* Let groups compress/shrink so the toolbar fits narrow viewports instead
+     of overflowing horizontally. Individual button padding/font-size is
+     trimmed by pad.css media queries at 900px / 600px breakpoints. */
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .toolbar-divider {
@@ -151,8 +161,13 @@
 
 /* ==================== 歌手面板 ==================== */
 #singer-panel {
-  width: 240px;
-  min-width: 200px;
+  /* Use flex-basis + min/max bounds instead of a fixed 240px width so the
+     panel scales with viewport: wide desktops get a comfortable 240px,
+     narrow viewports let it shrink down to 160px before collapsing to
+     100% width (stacked) under the 700px breakpoint (see pad.css). */
+  flex: 0 0 240px;
+  min-width: 160px;
+  max-width: 320px;
   display: flex;
   flex-direction: column;
   background: var(--bg-elevated);
@@ -164,6 +179,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-2);
   height: 36px;
   min-height: 36px;
   padding: 0 12px;
@@ -174,11 +190,28 @@
   color: var(--fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.8px;
+  /* Let the header shrink/wrap on narrow panels so the "+" button never
+     overflows the column boundary. The label truncates instead. */
+  min-width: 0;
+  overflow: hidden;
+}
+
+#singer-panel-header > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #btn-add-singer {
-  width: 24px;
-  height: 24px;
+  /* Replaced fixed 24×24 with flex-based sizing so the button always fits
+     inside the header (no column-boundary overflow on narrow panels) while
+     still meeting the 44×44 touch minimum on mobile via pad.css. */
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  flex-shrink: 0;
   background: var(--bg-button);
   color: var(--fg-muted);
   border: 1px solid var(--button-secondary-border);
@@ -406,6 +439,9 @@
 .btn-fragment-add {
   width: 22px;
   height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  flex-shrink: 0;
   background: var(--bg-button);
   color: var(--fg-muted);
   border: 1px solid var(--button-secondary-border);
@@ -439,6 +475,9 @@
 .btn-singer-delete {
   width: 22px;
   height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  flex-shrink: 0;
   background: var(--bg-button);
   color: var(--fg-muted);
   border: 1px solid var(--button-secondary-border);
@@ -602,4 +641,207 @@
   outline: 2px solid var(--accent, #5b8def);
   outline-offset: 1px;
   border-radius: 6px;
+}
+
+/* ==================== Mobile overflow menu (settings / resource / about) ====================
+   The overflow button is hidden on desktop (the OS menu bar provides those
+   entries). pad.css reveals it on small/touch viewports (≤900px). */
+.toolbar-overflow-wrap {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+#btn-toolbar-overflow {
+  display: none;
+  background: var(--bg-button);
+  color: var(--fg-muted);
+  border: 1px solid var(--button-secondary-border);
+  border-radius: var(--radius-md);
+  padding: 6px;
+  cursor: pointer;
+  line-height: 0;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              border-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard),
+              transform var(--motion-fast) var(--ease-bounce);
+}
+
+#btn-toolbar-overflow:hover {
+  background: var(--bg-button-hover);
+  color: var(--fg-toolbar-hover);
+  border-color: var(--accent);
+}
+
+#btn-toolbar-overflow:active {
+  transform: scale(0.95);
+  transition-duration: 0.06s;
+}
+
+#btn-toolbar-overflow svg {
+  display: block;
+}
+
+/* The dropdown panel itself — pure CSS positioning (no JS layout calc). It
+   anchors to the right edge of the overflow button so it never overflows
+   the viewport on a phone. z-index above #toolbar (10). */
+#toolbar-overflow-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 200px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  padding: var(--space-1) 0;
+  z-index: 50;
+  /* Avoid the parent #toolbar's overflow affecting the dropdown — it's
+     positioned absolutely so it escapes the toolbar's flex flow. */
+  animation: toolbar-overflow-enter 0.16s var(--ease-emphasized);
+}
+
+@keyframes toolbar-overflow-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.overflow-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  background: transparent;
+  color: var(--fg-secondary);
+  border: none;
+  border-radius: 0;
+  font-size: var(--font-base);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              color var(--motion-fast) var(--ease-standard);
+}
+
+.overflow-item:hover {
+  background: var(--accent-softer);
+  color: var(--fg-primary);
+}
+
+.overflow-item:active {
+  background: var(--accent-soft);
+  transform: none;
+}
+
+.overflow-item svg {
+  flex-shrink: 0;
+}
+
+/* ==================== About dialog ====================
+   Lightweight modal — replaces the native About… entry on platforms
+   without a menu bar (mobile, web). Inherits .dialog-overlay / .dialog-box
+   styles from the shared components stylesheet, adds only the layout
+   tweaks specific to the About panel. */
+#about-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-scrim, rgba(0, 0, 0, 0.55));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+  padding: var(--space-5);
+}
+
+#about-dialog {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-2xl, 12px);
+  padding: var(--space-7);
+  max-width: 420px;
+  width: 100%;
+  text-align: center;
+  color: var(--fg-primary);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45), 0 0 40px var(--accent-softer, transparent);
+  animation: about-dialog-enter 0.24s var(--ease-emphasized);
+}
+
+@keyframes about-dialog-enter {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.about-dialog-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto var(--space-5);
+  border-radius: 50%;
+  background: var(--accent-softer, rgba(91, 141, 239, 0.15));
+  color: var(--accent);
+}
+
+.about-dialog-title {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-xl, 20px);
+  font-weight: 600;
+  color: var(--fg-primary);
+}
+
+.about-dialog-desc {
+  margin: 0 0 var(--space-5);
+  font-size: var(--font-base);
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+.about-dialog-version {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+}
+
+#about-version-value {
+  font-weight: 600;
+  color: var(--fg-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.about-dialog-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.about-dialog-close-btn {
+  padding: var(--space-3) var(--space-7);
+  background: var(--bg-button-primary, var(--accent));
+  color: var(--fg-on-accent, #fff);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-base);
+  font-weight: 500;
+  transition: background-color var(--motion-fast) var(--ease-standard),
+              transform var(--motion-fast) var(--ease-bounce);
+}
+
+.about-dialog-close-btn:hover {
+  transform: translateY(-1px);
+}
+
+.about-dialog-close-btn:active {
+  transform: scale(0.97);
+  transition-duration: 0.06s;
 }
