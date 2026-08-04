@@ -97,19 +97,32 @@ select,
    (`#main-content`, `overflow: hidden`) clips/overlaps it — this is the
    "buttons overlap on phone" failure. `height: auto` lets the toolbar grow
    to fit its wrapped rows; `min-height` keeps the single-row baseline.
-   `overflow-x: auto` is a fallback so a single long row scrolls instead of
-   wrapping into a tall stack on very narrow phones. */
+   IMPORTANT: Do NOT use `overflow-x: auto` here — per CSS spec, setting
+   one axis to a non-`visible` value forces the other to compute to `auto`,
+   which clips the `#toolbar-overflow-menu` dropdown that extends below
+   the toolbar. `flex-wrap: wrap` alone handles multi-row layout. */
 @media (max-width: 900px) {
   #toolbar {
     flex-wrap: wrap;
     gap: 4px;
     height: auto;
     min-height: 44px;
-    overflow-x: auto;
+    overflow: visible;
   }
   .toolbar-group { flex-wrap: wrap; }
   .toolbar-divider { display: none; }
-  .toolbar-group button { padding: 8px 12px; font-size: 14px; }
+  .toolbar-group button {
+    padding: 8px 12px;
+    font-size: 14px;
+    /* Allow buttons to shrink and truncate text so they fit on narrow
+       screens instead of overflowing the viewport. */
+    flex-shrink: 1;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   /* Compress fixed-width toolbar inputs so the row still fits without
      horizontal scroll on tablet-class viewports. */
   #toolbar input[type="number"] { width: 44px; padding: var(--space-1) var(--space-2); }
@@ -126,17 +139,22 @@ select,
 }
 
 @media (max-width: 600px) {
-  .toolbar-group button { padding: 7px 10px; font-size: 13px; margin: 2px 3px; }
+  .toolbar-group button {
+    padding: 6px 8px;
+    font-size: 12px;
+    margin: 1px 2px;
+    gap: 4px;
+  }
   /* On phones: drop the BPM/time-signature label text so only the input
      remains — saves ~50px of horizontal real estate per group. The numeric
      value is still visible in the #bpm-display-badge inside the timeline. */
   #toolbar label { font-size: 0; }
   #toolbar label input[type="number"],
-  #toolbar label input[type="checkbox"] { font-size: 13px; }
-  #toolbar input[type="number"] { width: 40px; }
-  #bpm-input { width: 48px; }
-  #time-display { min-width: 72px; font-size: 12px; }
-  .version-badge { font-size: 11px; padding: 2px 8px; }
+  #toolbar label input[type="checkbox"] { font-size: 12px; }
+  #toolbar input[type="number"] { width: 38px; }
+  #bpm-input { width: 44px; }
+  #time-display { min-width: 64px; font-size: 11px; padding: 2px 4px; }
+  .version-badge { font-size: 10px; padding: 2px 6px; }
 }
 
 /* Very small phones (≤420px): collapse non-essential toolbar groups to
@@ -145,6 +163,51 @@ select,
    singer-market / version move into the overflow menu (see MainWindowApp). */
 @media (max-width: 420px) {
   #toolbar .toolbar-group--overflow-candidate { display: none; }
+  .toolbar-group button {
+    padding: 5px 6px;
+    font-size: 11px;
+    margin: 1px;
+  }
+}
+
+/* ---------- Pad / tablet enhanced touch targets (≥768px) ----------
+   On tablets the extra horizontal space allows larger, more comfortable
+   touch targets. Buttons get bigger padding, font, and min touch target
+   dimensions. This is the "enhance touch on pad" counterpart to the
+   phone compaction above. */
+@media (min-width: 768px) {
+  .toolbar-group button {
+    padding: 10px 18px;
+    font-size: 16px;
+    border-radius: 10px;
+    margin: 4px 6px;
+  }
+  .btn-toolbar {
+    padding: 10px 18px;
+    font-size: 15px;
+    min-height: var(--touch-target-pad);
+  }
+  /* Transport controls get the largest targets for thumb reachability. */
+  .transport button,
+  #btn-play,
+  #btn-stop {
+    min-height: var(--touch-target-pad);
+    min-width: var(--touch-target-pad);
+    font-size: 16px;
+  }
+  /* Sidebar items get taller for stylus / finger touch on tablet. */
+  .sidebar-item {
+    min-height: var(--touch-target-pad);
+    padding: 12px 18px;
+  }
+  /* Model download / resource manager buttons get larger touch area. */
+  .btn,
+  .model-btn,
+  .group-action-btn {
+    min-height: var(--touch-target-min);
+    padding: 8px 16px;
+    font-size: 14px;
+  }
 }
 
 /* ---------- Phone shell (≤700px) ----------
@@ -307,7 +370,10 @@ html, body {
 #app {
   height: 100%;
   height: -webkit-fill-available;
-  padding-top: var(--safe-area-top);
+  /* Safe-area insets are handled by individual window toolbars / containers,
+     NOT on #app. Putting padding-top here double-pads the toolbar (which
+     already has `padding-top: var(--safe-area-top)`) and creates excessive
+     empty space at the top of the main window on Android. */
   padding-bottom: var(--safe-area-bottom);
   padding-left: var(--safe-area-left);
   padding-right: var(--safe-area-right);
@@ -409,8 +475,10 @@ button:active,
   .sidebar-item { flex: 0 0 auto; }
 }
 
+/* Transport controls are already enlarged by the ≥768px pad media query
+   above. This ≤720px rule ensures they also get pad-sized targets in
+   landscape phones (wide aspect, short height). */
 @media (max-width: 720px) {
-  /* Transport (play/stop) buttons get pad-sized targets in portrait. */
   .transport button,
   #btn-play,
   #btn-stop {

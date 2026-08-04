@@ -13,6 +13,8 @@
   height: 44px;
   min-height: 44px;
   padding: 0 12px;
+  /* Safe-area-top handled by pad.css `#toolbar { padding-top: var(--safe-area-top) }`
+     so the toolbar background extends behind the status bar area. */
   background: linear-gradient(180deg, var(--bg-toolbar-start) 0%, var(--bg-toolbar-end) 100%);
   color: var(--fg-primary);
   border-bottom: 1px solid var(--border-subtle);
@@ -23,7 +25,7 @@
   /* `min-width: 0` lets flex children shrink proportionally so a long row
      compresses instead of pushing the toolbar's width past the viewport.
      Horizontal overflow is handled by pad.css media queries
-     (flex-wrap + overflow-x: auto on small screens). */
+     (flex-wrap on small screens). */
   min-width: 0;
 }
 
@@ -73,6 +75,11 @@
   white-space: nowrap;
   position: relative;
   overflow: hidden;
+  text-overflow: ellipsis;
+  /* Allow buttons to shrink proportionally in flex layouts so they
+     fit within the toolbar on narrow screens instead of overflowing. */
+  flex-shrink: 1;
+  min-width: 0;
   will-change: transform;
 }
 

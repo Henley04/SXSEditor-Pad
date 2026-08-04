@@ -3,7 +3,7 @@ body {
   -webkit-font-smoothing: antialiased;
   background: var(--bg-app);
   color: var(--fg-secondary);
-  padding: var(--space-6) var(--space-8);
+  padding: var(--space-4) var(--space-5);
   margin: 0;
   overflow-y: auto;
   user-select: none;
@@ -11,6 +11,38 @@ body {
   flex-direction: column;
   height: 100vh;
   box-sizing: border-box;
+}
+
+/* On phones, reduce body padding to maximize usable screen space. */
+@media (max-width: 600px) {
+  body {
+    padding: var(--space-2) var(--space-3);
+  }
+  .header h1 {
+    font-size: var(--font-lg);
+    margin-bottom: var(--space-2);
+  }
+  .header p {
+    font-size: var(--font-sm);
+  }
+  /* Buttons: compact but still touch-friendly on phone. */
+  .btn {
+    padding: 6px 12px;
+    font-size: 13px;
+    min-height: 40px;
+  }
+}
+
+/* On pads, enlarge buttons for touch. */
+@media (min-width: 768px) {
+  body {
+    padding: var(--space-6) var(--space-8);
+  }
+  .btn {
+    padding: var(--space-3) var(--space-6);
+    font-size: var(--font-base);
+    min-height: 48px;
+  }
 }
 
 .header {
