@@ -237,6 +237,19 @@ input[type="checkbox"]:disabled {
   cursor: not-allowed;
 }
 
+/* Pad/touch sizes checkboxes 22x22 (see pad.css). The checkmark ::after
+   is positioned for 16px boxes (left 4px, top 1px). On 22px the
+   checkmark appears shifted to the top-left corner. Scale proportionally. */
+@media (max-width: 900px) {
+  input[type="checkbox"]::after {
+    left: 6px;
+    top: 2px;
+    width: 6px;
+    height: 11px;
+    border-width: 0 2.5px 2.5px 0;
+  }
+}
+
 /* 兼容已有容器：保留 accent-color 回退（appearance:none 下无效，仅作向后兼容） */
 
 /* Card-like panels get subtle hover lift */

@@ -43,19 +43,19 @@
           @click="store.setSection('section-export-params')">
           <span>{{ $t('settings.exportInferenceParams') }}</span>
         </div>
-        <div class="sidebar-item"
+        <div class="sidebar-item" v-if="!isMobile"
           :class="{ active: store.activeSection === 'section-vocoder-chunk' }"
           @click="store.setSection('section-vocoder-chunk')">
           <span>{{ $t('settings.vocoderChunkTitle') }}</span>
         </div>
-        <div class="sidebar-item"
+        <div class="sidebar-item" v-if="!isMobile"
           :class="{ active: store.activeSection === 'section-ort' }"
           @click="store.setSection('section-ort')">
           <span>{{ $t('settings.ortSectionTitle') }}</span>
         </div>
 
         <div class="sidebar-category">{{ $t('settings.catAudio') }}</div>
-        <div class="sidebar-item"
+        <div class="sidebar-item" v-if="!isMobile"
           :class="{ active: store.activeSection === 'section-audio' }"
           @click="store.setSection('section-audio')">
           <span>{{ $t('settings.audioOutput') }}</span>
@@ -92,9 +92,9 @@
       <InferenceSection v-show="store.activeSection === 'section-inference'" />
       <PreviewParamsSection v-show="store.activeSection === 'section-preview-params'" />
       <ExportParamsSection v-show="store.activeSection === 'section-export-params'" />
-      <VocoderChunkSection v-show="store.activeSection === 'section-vocoder-chunk'" />
-      <OrtSection v-show="store.activeSection === 'section-ort'" />
-      <AudioSection v-show="store.activeSection === 'section-audio'" />
+      <VocoderChunkSection v-if="!isMobile" v-show="store.activeSection === 'section-vocoder-chunk'" />
+      <OrtSection v-if="!isMobile" v-show="store.activeSection === 'section-ort'" />
+      <AudioSection v-if="!isMobile" v-show="store.activeSection === 'section-audio'" />
       <MidiSection v-show="store.activeSection === 'section-midi'" />
       <ModelSection v-show="store.activeSection === 'section-model'" />
       <UpdateSection v-show="store.activeSection === 'section-update'" />
@@ -114,7 +114,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted } from 'vue';
+import { onMounted, onUnmounted, computed } from 'vue';
 import { useSettingsStore } from './store.js';
 import { initWindowTheme } from '../../../themes/themeInit.js';
 
@@ -139,6 +139,16 @@ import ThemeEditorModal from './ThemeEditorModal.vue';
 import ThemeSaveAsModal from './ThemeSaveAsModal.vue';
 
 const store = useSettingsStore();
+
+// Platform detection: hide desktop-only sections (Audio device selection,
+// ORT session C-API knobs, VocoderChunk VRAM/budget management) on mobile.
+// These features require hardware (audio interfaces, DML/GPU VRAM control)
+// that doesn't exist on Android/iOS tablets.
+const isMobile = computed(() => {
+  const ua = navigator.userAgent || '';
+  return /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua)
+    || (window.electronAPI && !window.electronAPI.settingsGetDmlDevices);
+});
 
 const _cleanups = [];
 

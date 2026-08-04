@@ -168,17 +168,33 @@ body {
 
 .setting-group input[type="range"] {
     width: 100%;
-    height: 6px;
+    /* Height must accommodate the thumb (28px on touch, 16px on desktop),
+       not just the 6px track. The old `height: 6px` caused the thumb to
+       overflow the box and become ungrabbable / misaligned on touch. */
+    height: 28px;
     -webkit-appearance: none;
     appearance: none;
-    background: var(--border-strong);
+    background: transparent;
     border-radius: 3px;
     outline: none;
     margin-top: var(--space-3);
     transition: background var(--motion-base);
 }
 
-.setting-group input[type="range"]:hover {
+/* Track: visible 6px bar centered in the 28px tall input. */
+.setting-group input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border-strong);
+}
+
+.setting-group input[type="range"]::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border-strong);
+}
+
+.setting-group input[type="range"]:hover::-webkit-slider-runnable-track {
     background: var(--button-secondary-border);
 }
 
@@ -193,6 +209,9 @@ body {
     border: 3px solid var(--bg-panel);
     box-shadow: 0 2px 8px var(--accent-glow);
     transition: transform var(--motion-fast), box-shadow var(--motion-fast);
+    /* Center the 16px thumb on the 6px track:
+       margin-top = -(16 - 6) / 2 = -5px */
+    margin-top: -5px;
 }
 
 .setting-group input[type="range"]::-webkit-slider-thumb:hover {
@@ -208,6 +227,8 @@ body {
     cursor: pointer;
     border: 3px solid var(--bg-panel);
     box-shadow: 0 2px 8px var(--accent-glow);
+    /* Firefox: center thumb on track. */
+    margin-top: -5px;
 }
 
 .volume-display {

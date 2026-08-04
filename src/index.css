@@ -81,6 +81,13 @@
   flex-shrink: 1;
   min-width: 0;
   will-change: transform;
+  /* Uniform sizing: all toolbar buttons share the same height and
+     flex centering so they align regardless of text length. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 32px;
 }
 
 #toolbar button:hover {

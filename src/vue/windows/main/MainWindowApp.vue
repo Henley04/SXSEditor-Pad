@@ -236,6 +236,19 @@ onMounted(async () => {
   // reads the correct CSS variables.
   initWindowTheme(cleanups);
 
+  // Attempt to set the window to fullscreen on mobile to hide the Android
+  // status bar. This is a no-op on desktop (the window is already maximized
+  // via tauri.conf.json). On Android, `setFullscreen(true)` sets immersive
+  // mode so the status bar doesn't overlap with toolbar content.
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const win = getCurrentWindow();
+    await win.setFullscreen(true);
+  } catch (_) {
+    // Tauri API might not be available in dev/web mode — safe to ignore.
+    // CSS safe-area-inset fallback handles the status bar area.
+  }
+
   // Overflow menu / about dialog listeners.
   document.addEventListener('click', onDocClick);
   document.addEventListener('keydown', onKeydown);
