@@ -202,7 +202,18 @@ export default {
     saveAndExit: '保存并退出',
     discardChanges: '不保存',
     discardCancel: '取消',
-    dragToSeek: '拖动以跳转播放进度'
+    dragToSeek: '拖动以跳转播放进度',
+    // Mobile / small-screen toolbar overflow menu — surfaces the items that
+    // normally live in the desktop OS menu bar (File → Settings, Resource
+    // Manager, About) so touch users can still reach them.
+    more: '更多',
+    settings: '设置',
+    resourceManager: '资源管理器',
+    about: '关于',
+    aboutTitle: '关于 SXSEditor',
+    aboutVersion: '版本',
+    aboutDescription: '基于 ONNX Runtime / DirectML 的 AI 歌声合成工作台',
+    closeAbout: '关闭'
   },
   fragment: {
     title: '分片编辑',

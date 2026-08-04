@@ -1103,10 +1103,16 @@ function onDocMouseUp() {
 }
 
 function onDocTouchMove(e) {
-  if (e.touches.length === 1) {
-    handleTrimPointerMove(e.touches[0].clientX);
-    e.preventDefault();
-  }
+  // Only hijack the touchmove gesture (and preventDefault to block page
+  // scroll) while an actual trim-handle / waveform drag is in progress.
+  // Without this guard the document-level `touchmove` listener would
+  // swallow every single-finger pan — including the user trying to scroll
+  // the #left-panel form on mobile, manifesting as "touch slide doesn't
+  // work on the singer creator page".
+  if (e.touches.length !== 1) return;
+  if (!_waveformDragging && !trimDragging) return;
+  handleTrimPointerMove(e.touches[0].clientX);
+  e.preventDefault();
 }
 
 function onDocTouchEnd() {
