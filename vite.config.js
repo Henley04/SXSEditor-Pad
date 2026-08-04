@@ -105,13 +105,30 @@ function devWindowRouter() {
   };
 }
 
+// Source HTML filename → window output directory. Vite emits HTML files
+// at dist/src/<file>.html based on the source path (src/index.html →
+// dist/src/index.html), NOT at the rollupOptions.input key path. This
+// mapping is used to move them to dist/<window>/index.html so the SPA
+// router and tauri.conf.json window URLs resolve correctly.
+const HTML_FILE_TO_WINDOW = {
+  'index.html': 'main_window',
+  'fragmentEditor.html': 'fragment_editor_window',
+  'singerCreator.html': 'singer_creator_window',
+  'singerMarket.html': 'singer_market_window',
+  'audioPreprocess.html': 'audio_preprocess_window',
+  'settings.html': 'settings_window',
+  'modelDownload.html': 'model_download_window',
+  'resourceManager.html': 'resource_manager_window',
+  'splash.html': 'splash_window',
+  'updateNotification.html': 'update_notification_window',
+};
+
 // ---- Build-time asset copier -----------------------------------------------
 // Mirrors webpack CopyPlugin: copies themeBootstrap.js (referenced as a
 // non-module <script> in each HTML head) and onnxruntime-web wasm/JS glue
 // into each window's dist subdirectory after the bundle is written.
-// HTML files are emitted directly at dist/<window>/index.html by Vite
-// (the rollupOptions.input keys use '<window>/index'), so no HTML
-// post-processing is needed here.
+// Also moves the emitted HTML files from dist/src/<file>.html to
+// dist/<window>/index.html (see HTML_FILE_TO_WINDOW comment above).
 function copyWindowAssets() {
   return {
     name: 'sxs-copy-window-assets',
@@ -119,6 +136,28 @@ function copyWindowAssets() {
     closeBundle() {
       const distRoot = path.resolve(__dirname, 'dist');
       if (!fs.existsSync(distRoot)) return;
+
+      // Move HTML files: Vite emits them at dist/src/<file>.html based on
+      // the source file path, but the SPA router / Tauri config expects
+      // dist/<window>/index.html. Relative asset refs inside the HTML
+      // (../assets/..., ./themes/..., ./SXS.png) stay valid because both
+      // paths are one level deep under dist/.
+      const srcHtmlDir = path.join(distRoot, 'src');
+      if (fs.existsSync(srcHtmlDir)) {
+        for (const fileName of Object.keys(HTML_FILE_TO_WINDOW)) {
+          const srcPath = path.join(srcHtmlDir, fileName);
+          if (!fs.existsSync(srcPath)) continue;
+          const windowDir = HTML_FILE_TO_WINDOW[fileName];
+          const winDist = path.join(distRoot, windowDir);
+          if (!fs.existsSync(winDist)) fs.mkdirSync(winDist, { recursive: true });
+          fs.copyFileSync(srcPath, path.join(winDist, 'index.html'));
+          fs.unlinkSync(srcPath);
+        }
+        const remaining = fs.readdirSync(srcHtmlDir);
+        if (remaining.length === 0) {
+          fs.rmdirSync(srcHtmlDir);
+        }
+      }
 
       // themeBootstrap.js → dist/<window>/themes/themeBootstrap.js
       const bootstrapSrc = path.resolve(__dirname, 'src/themes/themeBootstrap.js');
