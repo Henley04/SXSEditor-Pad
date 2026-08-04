@@ -13,8 +13,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  lint:
-    name: Lint
+  lint-test-build:
+    name: Lint + Test + Build Web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,34 +27,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: ESLint
         run: npx eslint src test --ext .js || true
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
       - name: Run tests
         run: npx mocha --require ./test/setup.js "test/**/*.test.js" --timeout 30000 --reporter spec
-
-  build-web:
-    name: Build Web Frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-      - name: Install dependencies
-        run: npm ci --ignore-scripts
       - name: Build
         run: npx vite build
 
@@ -69,6 +43,10 @@ jobs:
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - name: Cargo fmt check
         working-directory: src-tauri
         run: cargo fmt --check || true
