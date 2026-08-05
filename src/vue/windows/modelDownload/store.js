@@ -60,14 +60,9 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
   });
 
   // ==================== Precision / revision ====================
-  // Default precision: 'int8' on mobile (NPU/DirectML not available),
-  // 'int8-npu' on desktop (has NPU/DirectML acceleration).
-  function getDefaultPrecision() {
-    const ua = navigator.userAgent || '';
-    const isMobile = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua);
-    return isMobile ? 'int8' : 'int8-npu';
-  }
-  const currentPrecision = ref(getDefaultPrecision());
+  // Default precision is int8-npu on ALL platforms (same as desktop SXSEditor).
+  // The Rust backend (models.rs) ships only the int8-npu manifest.
+  const currentPrecision = ref('int8-npu');
   // 'latest' = auto-pick newest tag, or a specific tag (e.g. 'v1')
   const currentRevision = ref('latest');
   // tags fetched from ModelScope (branches NOT shown)
@@ -370,8 +365,7 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
   }
 
   function handlePrecision(precision) {
-    const defaultP = getDefaultPrecision();
-    const newPrecision = precision || defaultP;
+    const newPrecision = precision || 'int8-npu';
     const changed = newPrecision !== currentPrecision.value;
     currentPrecision.value = newPrecision;
     // Resolve the initial-precision promise so the first refreshVersionInfo()
@@ -724,7 +718,12 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
     renderJpCard();
     try {
       const result = await window.electronAPI.modelDownloadCheckJp(currentPrecision.value);
-      if (result && result.missing && result.missing.length === 0) {
+      // IMPORTANT: check result.installed first, not just result.missing.length.
+      // The Rust stub returns { installed: false, missing: [] } — an empty
+      // missing array with installed=false means "not checked / stub", NOT
+      // "all files present". Without this check, the UI incorrectly shows
+      // the JP model as "already downloaded".
+      if (result && result.installed && (!result.missing || result.missing.length === 0)) {
         jpStatus.value = 'installed';
         try {
           jpVersionInfo.value = await window.electronAPI.modelDownloadCheckJpVersion(
@@ -1137,8 +1136,19 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
     refreshSifiganCard();
     // Refresh JP card after precision is known
     refreshJpCard();
-    // 检查主模型版本信息
+    // Check main model version info (stub returns hasModelFiles:false,
+    // so the overview correctly shows "missing" until files are downloaded)
     refreshVersionInfo();
+    // Also run the real file-level check (check_missing) to get an accurate
+    // count of missing files. This populates missingFiles so the start
+    // button shows the correct "N files to download" label.
+    try {
+      const checkResult = await window.electronAPI.modelDownloadCheck();
+      // Rust returns { files: [...], precision: "..." } — field is "files"
+      if (checkResult && checkResult.files) {
+        missingFiles.value = checkResult.files;
+      }
+    } catch (_) { /* non-fatal */ }
     // Initial overview status (will be re-updated as each refresh completes)
     updateOverviewStatus();
   }
