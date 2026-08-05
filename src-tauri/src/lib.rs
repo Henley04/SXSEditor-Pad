@@ -412,10 +412,13 @@ async fn model_download_check_all_versions(
     _app: AppHandle,
     _precision: String,
 ) -> Result<Value, String> {
+    // Return 'main' (not 'svs') to match frontend expectations.
+    // Include hasModelFiles:false so _resolveOverviewState() in the settings
+    // store correctly shows "missing" instead of "installed".
     Ok(json!({
-        "svs": { "updateAvailable": false, "latestVersion": "master" },
-        "jp": { "updateAvailable": false, "latestVersion": null },
-        "sifigan": { "updateAvailable": false, "latestVersion": null }
+        "main": { "updateAvailable": false, "hasModelFiles": false, "latestVersion": "master" },
+        "jp": { "updateAvailable": false, "hasModelFiles": false, "latestVersion": null },
+        "sifigan": { "updateAvailable": false, "hasModelFiles": false, "allExist": false, "status": "not_downloaded", "latestVersion": null }
     }))
 }
 
@@ -445,7 +448,15 @@ async fn model_download_check_jp_exists(_app: AppHandle) -> Result<bool, String>
 
 #[tauri::command]
 async fn model_download_check_sifigan(_app: AppHandle) -> Result<Value, String> {
-    Ok(json!({ "installed": false, "missing": ["sifigan_generator.onnx"], "configured": false }))
+    // Frontend refreshSifiganCard() reads: result.status, result.files,
+    // result.allExist. Return matching fields so the SiFiGAN card doesn't
+    // get stuck on "checking" (status=undefined falls through to default).
+    Ok(json!({
+        "status": "not_downloaded",
+        "files": ["sifigan_vocoder_dml.onnx"],
+        "allExist": false,
+        "configured": false
+    }))
 }
 
 #[tauri::command]

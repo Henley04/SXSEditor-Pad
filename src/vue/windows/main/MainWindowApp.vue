@@ -268,40 +268,12 @@ onMounted(async () => {
 
   // CSS fallback: if env(safe-area-inset-top) returns 0 (common on Android
   // where Tauri doesn't set the status bar insets), detect the status bar
-  // height by comparing window.innerHeight with screen.height, and inject
-  // it as a CSS custom property on :root so the toolbar padding-top uses
-  // the real value instead of 0.
-  function applySafeAreaTop() {
-    const screenH = window.screen ? window.screen.height : 0;
-    const innerH = window.innerHeight;
-    // On Android, the status bar height ≈ screen.height - innerHeight when
-    // the app is not fullscreen. If the status bar is hidden (fullscreen),
-    // the difference is 0 and env() should also work.
-    let safeTop = 0;
-    if (screenH > innerH) {
-      safeTop = screenH - innerH;
-    }
-    // Also check CSS env() value (may be nonzero on iOS / properly configured
-    // Android). Use the larger of the two.
-    const envTop = parseInt(
-      getComputedStyle(document.documentElement).getPropertyValue('--safe-area-top') || '0',
-      10
-    );
-    const effectiveTop = Math.max(safeTop, envTop, 0);
-    if (effectiveTop > 0) {
-      document.documentElement.style.setProperty(
-        '--safe-area-top',
-        effectiveTop + 'px'
-      );
-    }
-  }
-  applySafeAreaTop();
-  window.addEventListener('resize', applySafeAreaTop);
-  window.addEventListener('orientationchange', () => setTimeout(applySafeAreaTop, 100));
-  cleanups.push(() => {
-    window.removeEventListener('resize', applySafeAreaTop);
-    window.removeEventListener('orientationchange', applySafeAreaTop);
-  });
+  // height and inject it as a CSS custom property on :root.
+  // Uses the shared utility so all windows (main, settings, model download)
+  // get the same safe-area detection logic.
+  const { applySafeAreaInsets } = await import('../../../utils/safeArea.js');
+  const safeAreaCleanup = applySafeAreaInsets();
+  cleanups.push(safeAreaCleanup);
 
   // Overflow menu / about dialog listeners.
   document.addEventListener('click', onDocClick);

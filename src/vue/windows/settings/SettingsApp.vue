@@ -152,9 +152,16 @@ const isMobile = computed(() => {
 
 const _cleanups = [];
 
-onMounted(() => {
+onMounted(async () => {
   // Apply theme tokens + listen for theme changes (cleanup pushed to array).
   initWindowTheme(_cleanups);
+
+  // Apply safe-area insets for Android status bar (shared utility).
+  try {
+    const { applySafeAreaInsets } = await import('../../../utils/safeArea.js');
+    _cleanups.push(applySafeAreaInsets());
+  } catch (_) { /* non-fatal */ }
+
   // Kick off all the async IPC bootstrap (devices, settings, models, theme
   // list, update section, vocoder chunk info, IPC listeners).
   store.init().catch((err) => {

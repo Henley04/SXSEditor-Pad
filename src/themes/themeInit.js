@@ -6,6 +6,33 @@
  *   initWindowTheme(ipcCleanupsArray);
  */
 
+// Cache theme tokens in localStorage so that when a new window/SPA page
+// loads, the theme can be applied immediately from cache before the IPC
+// bootstrap round-trip completes. This prevents a flash of the default
+// theme (from themeBootstrap.js) when navigating between windows.
+const THEME_CACHE_KEY = 'sxseditor.themeCache';
+
+function saveThemeToCache(themeObj) {
+    try {
+        if (themeObj && themeObj.tokens) {
+            localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({
+                themeId: themeObj.id || themeObj.themeId || null,
+                tokens: themeObj.tokens,
+            }));
+        }
+    } catch (_) { /* non-fatal */ }
+}
+
+function loadThemeFromCache() {
+    try {
+        const raw = localStorage.getItem(THEME_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.tokens) return parsed;
+    } catch (_) { /* non-fatal */ }
+    return null;
+}
+
 function injectTokens(tokens) {
     if (!tokens || typeof document === 'undefined') return;
     const root = document.documentElement;
@@ -26,15 +53,29 @@ function injectTokens(tokens) {
 /**
  * Initialize theme for the current renderer window.
  *
- * 1. Fetches the current theme via themeAPI.bootstrap() (includes tokens)
- * 2. Applies its tokens to :root
- * 3. Listens for theme:changed IPC and re-applies
+ * 1. Applies cached theme from localStorage immediately (no FOUC)
+ * 2. Fetches the current theme via themeAPI.bootstrap() (includes tokens)
+ * 3. Applies its tokens to :root and updates the cache
+ * 4. Listens for theme:changed IPC and re-applies
  *
  * @param {Array} [ipcCleanups] - Optional array to push cleanup fns into
  */
 export async function initWindowTheme(ipcCleanups) {
     const api = window.electronAPI;
-    if (!api?.themeAPI) return;
+
+    // Try cache first for instant theme application (prevents FOUC when
+    // navigating between SPA pages — the inline :root tokens are lost on
+    // page navigation, so without cache the fallback theme shows until IPC
+    // resolves, causing a visible flash or permanent theme reset if IPC fails).
+    const cached = loadThemeFromCache();
+    if (cached) {
+        injectTokens(cached.tokens);
+    }
+
+    if (!api?.themeAPI) {
+        // No Tauri theme API available — cache fallback already applied
+        return;
+    }
 
     async function applyTheme(themeId) {
         if (!themeId) return;
@@ -42,6 +83,7 @@ export async function initWindowTheme(ipcCleanups) {
             const themeObj = await api.themeAPI.get(themeId);
             if (themeObj && themeObj.tokens) {
                 injectTokens(themeObj.tokens);
+                saveThemeToCache({ id: themeId, tokens: themeObj.tokens });
             }
         } catch (_) {}
     }
@@ -52,11 +94,14 @@ export async function initWindowTheme(ipcCleanups) {
             // Use theme from bootstrap response (avoids second IPC call)
             if (bootstrap.currentTheme && bootstrap.currentTheme.tokens) {
                 injectTokens(bootstrap.currentTheme.tokens);
+                saveThemeToCache(bootstrap.currentTheme);
             } else if (bootstrap.themeId) {
                 await applyTheme(bootstrap.themeId);
             }
         }
-    } catch (_) {}
+    } catch (_) {
+        // IPC failed — cache fallback already applied above
+    }
 
     if (api.themeAPI.onChanged) {
         const cleanup = api.themeAPI.onChanged(async (data) => {
