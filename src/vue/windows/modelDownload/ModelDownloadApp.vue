@@ -421,9 +421,15 @@ function onVersionSelectChange(e) {
 // is downloading).
 const cleanups = [];
 
-onMounted(() => {
+onMounted(async () => {
   initWindowTheme(cleanups);
   document.documentElement.lang = getLocale();
+
+  // Apply safe-area insets for Android status bar (shared utility).
+  try {
+    const { applySafeAreaInsets } = await import('../../../utils/safeArea.js');
+    cleanups.push(applySafeAreaInsets());
+  } catch (_) { /* non-fatal */ }
 
   cleanups.push(window.electronAPI.onModelDownloadMissingFiles((files) => store.handleMissingFiles(files)));
   cleanups.push(window.electronAPI.onModelDownloadPrecision((precision) => store.handlePrecision(precision)));

@@ -148,13 +148,21 @@ function _resolveOverviewState(info, opts = {}) {
       statusClass: 'checking',
     };
   }
+  // Check explicit "not installed" signals first
   if (info.status === 'download_url_not_configured' || info.status === 'not_downloaded') {
     return { dotState: 'missing', statusText: t('settings.modelOverviewMissing'), versionText: '', statusClass: 'missing' };
   }
-  if (info.hasModelFiles === false && !info.allExist) {
+  // hasModelFiles is the authoritative field from the Rust backend.
+  // Do NOT treat updateAvailable!==undefined as "installed" — the stub
+  // always returns updateAvailable:false, which would incorrectly mark
+  // every model as installed even when no files exist on disk.
+  if (info.hasModelFiles === false) {
     return { dotState: 'missing', statusText: t('settings.modelOverviewMissing'), versionText: '', statusClass: 'missing' };
   }
-  const installed = info.hasModelFiles === true || info.allExist === true || info.updateAvailable !== undefined;
+  if (info.allExist === false) {
+    return { dotState: 'missing', statusText: t('settings.modelOverviewMissing'), versionText: '', statusClass: 'missing' };
+  }
+  const installed = info.hasModelFiles === true || info.allExist === true;
   if (!installed) {
     return { dotState: 'missing', statusText: t('settings.modelOverviewMissing'), versionText: '', statusClass: 'missing' };
   }

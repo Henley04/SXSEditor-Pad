@@ -2735,6 +2735,92 @@ export function setupEventListeners() {
     });
   }, { passive: false });
 
+  // ==================== Two-finger touch scroll/zoom (mobile) ====================
+  // The canvas has `touch-action: none` (pad.css), so the browser won't
+  // handle any touch gestures. We need to manually translate two-finger
+  // touch into scroll/zoom, mirroring the wheel handler above.
+  let _twoFingerStart = null; // { x1, y1, x2, y2, dist, scrollX, scrollY, zoomX }
+  let _touchRaf = 0;
+  let _pendingTouch = null;
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dx = t2.clientX - t1.clientX;
+      const dy = t2.clientY - t1.clientY;
+      _twoFingerStart = {
+        x1: t1.clientX, y1: t1.clientY,
+        x2: t2.clientX, y2: t2.clientY,
+        dist: Math.hypot(dx, dy),
+        scrollX: getScrollX(),
+        scrollY: getScrollY(),
+        zoomX: getZoomX(),
+        midX: (t1.clientX + t2.clientX) / 2,
+        midY: (t1.clientY + t2.clientY) / 2,
+      };
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 2 || !_twoFingerStart) return;
+    e.preventDefault();
+
+    _pendingTouch = e;
+    if (_touchRaf) return;
+    _touchRaf = requestAnimationFrame(() => {
+      _touchRaf = 0;
+      const ev = _pendingTouch;
+      _pendingTouch = null;
+      if (!ev || !_twoFingerStart) return;
+
+      const t1 = ev.touches[0];
+      const t2 = ev.touches[1];
+      const dx = t2.clientX - t1.clientX;
+      const dy = t2.clientY - t1.clientY;
+      const newDist = Math.hypot(dx, dy);
+      const midX = (t1.clientX + t2.clientX) / 2;
+      const midY = (t1.clientY + t2.clientY) / 2;
+
+      // Pinch zoom: if the distance changed significantly, treat as zoom
+      const distRatio = newDist / _twoFingerStart.dist;
+      if (Math.abs(distRatio - 1) > 0.02) {
+        // Pinch zoom — mirror the wheel zoom logic
+        const oldZoomX = getZoomX();
+        const newZoomX = Math.max(0.25, Math.min(4, oldZoomX * distRatio));
+        setZoomX(newZoomX);
+
+        // Zoom toward the pinch center (like the wheel handler uses mouse pos)
+        const rect = canvas.getBoundingClientRect();
+        const pos = { x: _twoFingerStart.midX - rect.left, y: _twoFingerStart.midY - rect.top };
+        // Compute mouseBeats using OLD zoom/scroll (same formula as wheel handler)
+        const mouseBeats = (pos.x + _twoFingerStart.scrollX) / (BEAT_WIDTH * oldZoomX);
+        const newScrollX = mouseBeats * BEAT_WIDTH * newZoomX - pos.x;
+        setScrollX(Math.max(0, newScrollX));
+      } else {
+        // Two-finger pan — scroll both X and Y
+        const deltaX = midX - _twoFingerStart.midX;
+        const deltaY = midY - _twoFingerStart.midY;
+
+        setScrollX(Math.max(0, _twoFingerStart.scrollX - deltaX));
+        const maxScrollY = Math.max(0, 128 * NOTE_HEIGHT + HEADER_HEIGHT + PARAM_CURVE_HEIGHT - canvas.parentElement.clientHeight);
+        setScrollY(Math.max(0, Math.min(maxScrollY, _twoFingerStart.scrollY - deltaY)));
+      }
+
+      render();
+    });
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) {
+      _twoFingerStart = null;
+      if (_touchRaf) {
+        cancelAnimationFrame(_touchRaf);
+        _touchRaf = 0;
+      }
+    }
+  }, { passive: false });
+
   _setupPitchContextMenuListeners();
   _setupKanjiContextMenuListeners();
   _setupNoteContextMenuListeners();
