@@ -56,7 +56,7 @@
         <option value="fp32">{{ $t('settings.precisionFp32') }}</option>
         <option value="fp16">{{ $t('settings.precisionFp16') }}</option>
         <option value="int8">{{ $t('settings.precisionInt8') }}</option>
-        <option v-if="!isMobile" value="int8-npu">{{ $t('settings.precisionInt8Npu') }}</option>
+        <option value="int8-npu">{{ $t('settings.precisionInt8Npu') }}</option>
       </select>
       <p class="hint">{{ $t('settings.modelPrecisionHint') }}</p>
       <div class="model-status-list">

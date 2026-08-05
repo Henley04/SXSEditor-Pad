@@ -423,7 +423,10 @@ async fn model_download_check_all_versions(
 
 #[tauri::command]
 async fn model_download_check_jp(_app: AppHandle, _precision: String) -> Result<Value, String> {
-    Ok(json!({ "installed": false, "missing": [] }))
+    // Return non-empty missing list so the frontend correctly shows "not
+    // downloaded". The old stub returned `missing: []` which the frontend
+    // interpreted as "all files present = installed" (bug).
+    Ok(json!({ "installed": false, "missing": ["japanese_vocalization_model.onnx"] }))
 }
 
 #[tauri::command]
@@ -442,7 +445,7 @@ async fn model_download_check_jp_exists(_app: AppHandle) -> Result<bool, String>
 
 #[tauri::command]
 async fn model_download_check_sifigan(_app: AppHandle) -> Result<Value, String> {
-    Ok(json!({ "installed": false, "missing": [], "configured": false }))
+    Ok(json!({ "installed": false, "missing": ["sifigan_generator.onnx"], "configured": false }))
 }
 
 #[tauri::command]

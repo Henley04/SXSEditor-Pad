@@ -254,6 +254,18 @@ onMounted(async () => {
     // for Android. Fall through to CSS/JS safe-area handling.
   }
 
+  // Attempt to lock orientation to landscape on mobile (best-effort —
+  // the Screen Orientation API may not be available on all devices).
+  // Portrait is still accepted if the user rotates manually.
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {
+        // Orientation lock may fail if the document isn't fullscreen
+        // or the API requires user gesture. Non-fatal — portrait still works.
+      });
+    }
+  } catch (_) { /* no-op */ }
+
   // CSS fallback: if env(safe-area-inset-top) returns 0 (common on Android
   // where Tauri doesn't set the status bar insets), detect the status bar
   // height by comparing window.innerHeight with screen.height, and inject
