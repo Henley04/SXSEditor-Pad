@@ -127,7 +127,7 @@
           <input
             type="file"
             id="wav-file-input"
-            accept=".wav"
+            accept=".wav,.mp3,.flac,.aac,.m4a,.ogg,.webm,.aiff,.opus"
             hidden
             ref="wavFileInputRef"
             @change="onWavFileChange"
@@ -435,15 +435,35 @@ function onWavDrop(e) {
 }
 
 async function handleWavFile(file) {
-  if (!file.name.toLowerCase().endsWith('.wav')) {
-    showAlertDialog(t('singerCreator.pleaseSelectWavFormat'));
+  // Accept all common audio formats — Web Audio API's decodeAudioData
+  // handles WAV, MP3, M4A, AAC, OGG, FLAC, WebM, etc. depending on the
+  // platform's media framework. If a format isn't supported, the
+  // decodeAudioData call will throw and we show a clear error.
+  const supportedExtensions = ['.wav', '.mp3', '.flac', '.aac', '.m4a', '.ogg', '.webm', '.aiff', '.opus', '.wma'];
+  const lowerName = file.name.toLowerCase();
+  const isSupported = supportedExtensions.some(ext => lowerName.endsWith(ext));
+  if (!isSupported) {
+    showAlertDialog(t('singerCreator.unsupportedFormatDetail', {
+      formats: supportedExtensions.join(', ')
+    }));
     return;
   }
 
   try {
     const arrayBuffer = await file.arrayBuffer();
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+    let audioBuffer;
+    try {
+      audioBuffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+    } catch (decodeErr) {
+      // decodeAudioData failed — the format may not be supported by the
+      // platform's media framework (e.g. FLAC on some Android WebViews).
+      audioCtx.close();
+      throw new Error(t('singerCreator.decodeFailedDetail', {
+        format: lowerName.match(/\.[^.]+$/)?.[0] || file.name,
+        detail: decodeErr.message || decodeErr
+      }));
+    }
     const duration = audioBuffer.duration;
     audioCtx.close();
 

@@ -76,6 +76,7 @@ fn manifest() -> Vec<(&'static str, bool)> {
         ("preprocess/rmvpe_model.onnx", true),
         ("preprocess/rmvpe_mel.onnx", false),
         ("preprocess/rosvot_model.onnx", false),
+        ("preprocess/rosvot_mel.onnx", false),
         ("basic_pitch_model/model.json", true),
         ("basic_pitch_model/group1-shard1of1.bin", true),
         // Optional SiFiGAN vocoder — downloaded only if remote has it.

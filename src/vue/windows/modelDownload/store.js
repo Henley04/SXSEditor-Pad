@@ -1147,6 +1147,29 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
       // Rust returns { files: [...], precision: "..." } — field is "files"
       if (checkResult && checkResult.files) {
         missingFiles.value = checkResult.files;
+        // Explicitly set the UI state here — don't rely solely on the
+        // 'model-download:missing-files' IPC event handler, which may have
+        // timing issues on SPA navigation. If files are missing, show the
+        // precision selector and start button so the user can act.
+        if (!isDownloading.value && !jpIsDownloading.value && !sifiganIsDownloading.value) {
+          if (checkResult.files.length > 0) {
+            statusText.value = t('modelDownload.needDownloadCount', { count: checkResult.files.length });
+            statusSpinner.value = false;
+            startBtnVisible.value = true;
+            closeBtnVisible.value = true;
+            precisionSectionVisible.value = true;
+            progressSectionVisible.value = false;
+            errorVisible.value = false;
+          } else {
+            // All files present — show "installed" state
+            statusText.value = t('modelDownload.allFilesDownloaded');
+            statusSpinner.value = false;
+            startBtnVisible.value = false;
+            closeBtnVisible.value = true;
+            precisionSectionVisible.value = true;
+            progressSectionVisible.value = false;
+          }
+        }
       }
     } catch (_) { /* non-fatal */ }
     // Initial overview status (will be re-updated as each refresh completes)
