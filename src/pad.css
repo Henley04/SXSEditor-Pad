@@ -71,6 +71,17 @@ select,
   padding-right: var(--safe-area-right);
 }
 
+/* Mobile fallback: on Android Tauri edge-to-edge mode, both
+   env(safe-area-inset-top) and JS screen-dimension detection return 0,
+   so --safe-area-top stays 0 and the status bar covers the toolbar.
+   Use max() with a 28px minimum (standard Android status bar height)
+   so the toolbar is always accessible on mobile devices. */
+@media (max-width: 1024px) {
+  #toolbar {
+    padding-top: max(var(--safe-area-top, 0px), 28px);
+  }
+}
+
 /* Uniform button sizing: all toolbar buttons get the same height, padding,
    and flex centering so they look aligned regardless of text length. */
 .toolbar-group button {
