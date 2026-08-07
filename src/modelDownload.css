@@ -13,8 +13,11 @@ body {
   background: var(--bg-app);
   color: var(--fg-secondary);
   padding: var(--space-4) var(--space-5);
-  /* Add safe-area-top padding so content isn't hidden under the status bar */
-  padding-top: calc(var(--safe-area-top, 0px) + var(--space-4)) !important;
+  /* Add safe-area-top padding so content isn't hidden under the status bar.
+     Use max() with 28px minimum so that even on Android Tauri where
+     --safe-area-top resolves to 0 (edge-to-edge fullscreen), the content
+     is still pushed below the status bar. */
+  padding-top: calc(max(var(--safe-area-top, 0px), 28px) + var(--space-4)) !important;
   margin: 0;
   /* overflow-y: auto is critical — pad.css sets `html, body { overflow: hidden }`
      globally which would override this if specificity were equal. Use !important

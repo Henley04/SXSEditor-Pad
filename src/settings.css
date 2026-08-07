@@ -4,9 +4,10 @@ body {
     background: var(--bg-app);
     color: var(--fg-secondary);
     margin: 0;
-    padding: 0;
     /* Reserve space for the status bar on mobile so the top settings items
-       aren't hidden behind it. On desktop this resolves to 0px (no effect). */
+       aren't hidden behind it. Use max() so even if --safe-area-top
+       resolves to 0 (Android Tauri edge-to-edge), the mobile media query
+       below still applies a minimum. */
     padding-top: var(--safe-area-top, 0px);
     padding-bottom: var(--safe-area-bottom, 0px);
     padding-left: var(--safe-area-left, 0px);
@@ -15,6 +16,17 @@ body {
     box-sizing: border-box;
     height: 100vh;
     height: 100dvh;
+}
+
+/* Mobile fallback: on Android Tauri, env(safe-area-inset-top) and
+   screen.height-innerHeight both return 0 in edge-to-edge mode.
+   The safeArea.js utility sets --safe-area-top via JS, but as an
+   additional CSS safety net, apply a minimum 28px padding-top on
+   mobile devices so the sidebar tabs are always accessible. */
+@media (max-width: 1024px) {
+    body {
+        padding-top: max(var(--safe-area-top, 0px), 28px);
+    }
 }
 
 .settings-layout {

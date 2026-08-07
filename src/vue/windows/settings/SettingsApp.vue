@@ -122,6 +122,7 @@ import { initWindowTheme } from '../../../themes/themeInit.js';
 // .settings-layout / .settings-sidebar / .settings-section / .theme-editor-modal
 // / .theme-toast styles still apply.
 import '../../../common.css';
+import '../../../pad.css';   // Provides --safe-area-top and mobile layout rules
 import '../../../settings.css';
 
 import LanguageSection from './LanguageSection.vue';
