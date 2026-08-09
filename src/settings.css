@@ -22,8 +22,25 @@ body {
    screen.height-innerHeight both return 0 in edge-to-edge mode.
    The safeArea.js utility sets --safe-area-top via JS, but as an
    additional CSS safety net, apply a minimum 28px padding-top on
-   mobile devices so the sidebar tabs are always accessible. */
+   mobile devices so the sidebar tabs are always accessible.
+
+   Two breakpoints are needed because Android tablets vary wildly in
+   CSS viewport width:
+   - ≤1024px covers phones in landscape and small tablets in portrait
+   - ≤1366px covers 10-13" tablets in landscape (e.g. Pixel Tablet
+     1600x900 with default DPR has ~1280px CSS width, common Android
+     tablets in landscape land in the 1024-1366 range)
+   On wider desktop viewports (>1366px) we trust --safe-area-top or
+   assume the OS already left a gap. */
 @media (max-width: 1024px) {
+    body {
+        padding-top: max(var(--safe-area-top, 0px), 28px);
+    }
+}
+
+@media (min-width: 1025px) and (max-width: 1366px) {
+    /* Tablet landscape: still apply the minimum status-bar gap in case
+       Tauri / Android reports a 0 env() inset. */
     body {
         padding-top: max(var(--safe-area-top, 0px), 28px);
     }

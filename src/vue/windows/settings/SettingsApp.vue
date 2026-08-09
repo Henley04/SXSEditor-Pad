@@ -157,7 +157,22 @@ onMounted(async () => {
   // Apply theme tokens + listen for theme changes (cleanup pushed to array).
   initWindowTheme(_cleanups);
 
+  // Hide the OS status bar so the sidebar tabs are never overlapped by it.
+  // The main page does the same (MainWindowApp.vue onMounted) — without
+  // this, the Android status bar overlays the first row of sidebar items
+  // when the window is not in fullscreen. `setFullscreen` may not be
+  // implemented for Android in every Tauri 2 build, so any throw is
+  // swallowed and the safe-area CSS padding fallback below still pushes
+  // the layout below the status bar.
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    const win = getCurrentWindow();
+    await win.setFullscreen(true);
+  } catch (_) { /* not implemented on this platform; CSS safe-area handles it */ }
+
   // Apply safe-area insets for Android status bar (shared utility).
+  // Sets --safe-area-top on <body> (not <html>) so themeInit's injectTokens
+  // — which wipes <html>'s --* properties — can't clobber it.
   try {
     const { applySafeAreaInsets } = await import('../../../utils/safeArea.js');
     _cleanups.push(applySafeAreaInsets());
