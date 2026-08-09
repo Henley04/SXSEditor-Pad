@@ -499,14 +499,14 @@ button:active,
 }
 
 /* ---------- Large-pattern touch layouts ----------
-   On narrow tablets / phones, collapse sidebars into stacked panels and
-   enlarge transport controls so playback is reachable by thumb. */
-
-@media (max-width: 900px) {
-  .settings-layout { grid-template-columns: 1fr !important; }
-  .sidebar-nav { flex-direction: row; overflow-x: auto; }
-  .sidebar-item { flex: 0 0 auto; }
-}
+   On narrow tablets / phones, enlarge transport controls so playback is
+   reachable by thumb. The settings sidebar is INTENTIONALLY kept on the
+   left at every viewport width (see settings.css responsive section) —
+   the previous `grid-template-columns: 1fr` + `flex-direction: row` rule
+   here forced the tabs to a top horizontal bar, which on Android placed
+   the first row of tabs under the status bar and made them unclickable.
+   The sidebar already has `overflow-y: auto` (from the earlier touch
+   region rule) so the vertical list scrolls natively on touch. */
 
 /* Transport controls are already enlarged by the ≥768px pad media query
    above. This ≤720px rule ensures they also get pad-sized targets in

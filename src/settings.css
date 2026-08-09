@@ -1317,25 +1317,41 @@ body {
     margin-bottom: 16px;
 }
 
-/* ==================== Responsive ==================== */
+/* ==================== Responsive ====================
+   The settings window is INTENTIONALLY a fixed two-column layout (left
+   sidebar nav + right content) at every viewport width, including phones.
+   The sidebar has 8-11 items (Language, Theme, Inference Hardware, …,
+   Update) and the content panels are individually scrollable, so there is
+   no reason to collapse to a top tab bar — that layout was the source of
+   the status-bar overlap on Android, and it also wastes vertical space
+   that the content needs.
+
+   On narrow viewports we only:
+     • narrow the sidebar so the content has enough room,
+     • hide the section category labels to fit longer item names,
+     • tighten the content padding,
+     • and stretch the theme-editor modal to fullscreen (it's a modal
+       overlay and benefits from the extra space).
+
+   `.sidebar-nav` keeps `overflow-y: auto` from the base rule so the
+   vertical list is scrollable; pad.css adds `touch-action: pan-y` +
+   `-webkit-overflow-scrolling: touch` + `overscroll-behavior: contain`
+   to make that scroll gesture-friendly on touch devices. */
 
 @media (max-width: 900px) {
-    .settings-layout {
-        flex-direction: column;
-    }
-
     .settings-sidebar {
-        flex: 0 0 auto;
-        border-right: none;
-        border-bottom: 1px solid var(--border-default);
+        /* Narrow the sidebar from 200px → 140px on tablets/phones. The
+           flex-basis override is required because the base rule uses
+           `flex: 0 0 200px` (shorthand for grow/shrink/basis). */
+        flex: 0 0 140px;
+        min-width: 140px;
     }
 
     .sidebar-nav {
-        display: flex;
-        overflow-x: auto;
-        overflow-y: hidden;
-        padding: 0;
-        gap: 0;
+        /* Keep vertical scroll. `overflow-x: hidden` is defensive — the
+           item text uses `text-overflow: ellipsis` so it can't overflow
+           horizontally, but be explicit. */
+        overflow-x: hidden;
     }
 
     .sidebar-category {
@@ -1343,20 +1359,10 @@ body {
     }
 
     .sidebar-item {
-        white-space: nowrap;
-        border-left: none;
-        border-bottom: 3px solid transparent;
-        padding: 10px 14px;
+        /* Tighter padding so longer item names ("Preview Inference
+           Parameters", "MIDI Extract Tool") don't get truncated. */
+        padding: 8px 10px 8px 14px;
         font-size: var(--font-sm);
-    }
-
-    .sidebar-item.active {
-        border-bottom-color: var(--accent);
-        border-left-color: transparent;
-    }
-
-    .sidebar-header {
-        padding: 12px 14px 8px;
     }
 
     .sidebar-footer {
@@ -1386,6 +1392,17 @@ body {
         flex: 0 0 120px;
         font-size: var(--font-sm);
     }
+}
+
+/* Belt-and-suspenders: ensure the sidebar nav is touch-scrollable on
+   every viewport. pad.css already lists `.sidebar-nav` in its
+   `touch-action: pan-y` group, but we re-declare here so the contract
+   is co-located with the rest of the sidebar styles. The properties
+   are no-ops if already set, so this is safe to keep. */
+.sidebar-nav {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 /* ==================== Dialog Animation Keyframes ==================== */
@@ -1445,39 +1462,58 @@ body {
 /* ==================== Phone-specific (≤600px) ==================== */
 
 @media (max-width: 600px) {
-    .settings-content {
-        padding: 12px 10px 20px;
+    .settings-sidebar {
+        flex: 0 0 110px;
+        min-width: 110px;
     }
+
     .sidebar-item {
-        padding: 8px 10px;
-        font-size: 12px;
+        /* Truncate longer names ("Preview Inference Parameters",
+           "Export Inference Params") with ellipsis instead of letting
+           them push the sidebar wider than its flex-basis. */
+        padding: 8px 8px 8px 12px;
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
+
     .sidebar-header {
         padding: 8px 10px 6px;
     }
+
+    .settings-content {
+        padding: 12px 10px 20px;
+    }
+
     .setting-group label {
         font-size: var(--font-sm);
         flex-direction: column;
         align-items: flex-start;
         gap: 4px;
     }
+
     .setting-group select {
         width: 100%;
         padding: 6px 32px 6px 10px;
         font-size: var(--font-sm);
     }
+
     .btn-open-model-download {
         padding: 8px var(--space-4);
         font-size: var(--font-sm);
     }
+
     .btn-theme-action {
         min-width: 100px;
         padding: 6px var(--space-3);
         font-size: var(--font-sm);
     }
+
     .theme-editor-label {
         flex: 0 0 100px;
     }
+
     .model-mapping-label {
         flex: 0 0 100px;
     }
