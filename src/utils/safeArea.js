@@ -10,6 +10,20 @@
  * status bar height (28px — standard Android status bar in landscape/portrait)
  * when both env() and screen-dimension detection fail.
  *
+ * IMPORTANT — set values on `document.body`, NOT `document.documentElement`:
+ * The theme system (`themes/themeInit.js → injectTokens`) wipes every
+ * `--*` inline custom property on `<html>` and re-applies theme tokens
+ * whenever the theme loads or changes. If we set `--safe-area-top` on
+ * `<html>`, it gets nuked the moment the theme bootstrap IPC round-trip
+ * resolves (race with `onMounted`). Setting on `<body>` keeps the safe-area
+ * insets immune to that wiping pass. Body's own value still wins in the
+ * cascade for `body { padding-top: var(--safe-area-top) }`, and descendants
+ * inherit it from body instead of html, so the toolbar / sidebar / layout
+ * containers in every window continue to read the correct value.
+ *
+ * We also re-apply on the `theme:changed` event so subsequent theme
+ * switches (which re-run injectTokens) keep the safe-area insets intact.
+ *
  * Usage:
  *   import { applySafeAreaInsets } from '../utils/safeArea.js';
  *   const cleanup = applySafeAreaInsets();
@@ -29,6 +43,9 @@ function isMobileDevice() {
 
 export function applySafeAreaInsets() {
   function update() {
+    // Read the env() / default fallback from <html> (where pad.css declares
+    // --safe-area-top: env(safe-area-inset-top, 0px) on :root). We only READ
+    // from html — writes go to <body> to survive theme token re-injection.
     const root = document.documentElement;
     const screenH = window.screen ? window.screen.height : 0;
     const innerH = window.innerHeight;
@@ -80,21 +97,43 @@ export function applySafeAreaInsets() {
     }
     const effectiveBottom = Math.max(envBottom, screenBottom, mobileBottom, 0);
 
+    // Write to <body>, not <html>. themes/themeInit.js's injectTokens() wipes
+    // every `--*` inline property on <html> when the theme loads / changes,
+    // which previously clobbered the safe-area inset set here. Body survives
+    // that pass and its own value still wins in the CSS cascade for
+    // `body { padding-top: var(--safe-area-top) }`, with descendants
+    // inheriting from body.
+    const target = document.body || root;
     if (effectiveTop > 0) {
-      root.style.setProperty('--safe-area-top', effectiveTop + 'px');
+      target.style.setProperty('--safe-area-top', effectiveTop + 'px');
     }
     if (effectiveBottom > 0) {
-      root.style.setProperty('--safe-area-bottom', effectiveBottom + 'px');
+      target.style.setProperty('--safe-area-bottom', effectiveBottom + 'px');
     }
   }
 
   update();
+
+  function onThemeChanged() {
+    // The theme system wipes <html>'s --* properties; it doesn't touch <body>
+    // — but re-apply defensively in case a future theme pipeline changes that.
+    // Also: if the theme tokens happen to include --safe-area-* (they
+    // shouldn't, but just in case), re-asserting after the change keeps the
+    // status-bar gap intact.
+    update();
+  }
+
   // Re-run on resize and orientation change (with delay for UI to settle)
   window.addEventListener('resize', update);
   window.addEventListener('orientationchange', () => setTimeout(update, 200));
+  // Re-apply after theme:changed so subsequent theme switches don't
+  // regress the safe-area inset (the theme system fires this event after
+  // wiping <html>'s --* and re-injecting theme tokens).
+  window.addEventListener('theme:changed', onThemeChanged);
 
   return function cleanup() {
     window.removeEventListener('resize', update);
     window.removeEventListener('orientationchange', update);
+    window.removeEventListener('theme:changed', onThemeChanged);
   };
 }

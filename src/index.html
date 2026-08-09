@@ -9,6 +9,26 @@
     <meta name="theme-color" content="#0f0f1a" />
     <title>SXSEditor</title>
     <script src="./themes/themeBootstrap.js"></script>
+    <!--
+      Early safe-area inset. Runs in <head> before the body parses, so
+      the FIRST paint of the main window already has the status-bar gap
+      reserved on mobile / tablet. Without this, `body { padding-top: 0 }`
+      applies for the first frame and the Android status bar briefly
+      overlays the toolbar before MainWindowApp.vue's onMounted can run
+      the fullscreen + safe-area JS. safeArea.js later re-asserts the
+      value on <body> (where themeInit's injectTokens can't clobber it)
+      and listens to theme:changed to keep it intact.
+    -->
+    <script>
+      (function () {
+        try {
+          var ua = navigator.userAgent || '';
+          if (/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua)) {
+            document.documentElement.style.setProperty('--safe-area-top', '28px');
+          }
+        } catch (_) { /* non-fatal */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>

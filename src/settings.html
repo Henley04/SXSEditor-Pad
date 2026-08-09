@@ -9,6 +9,32 @@
     <meta name="theme-color" content="#0f0f1a" />
     <title data-i18n="settings.title">设置</title>
     <script src="./themes/themeBootstrap.js"></script>
+    <!--
+      Early safe-area inset. Runs in <head> before the body parses, so
+      the FIRST paint of the settings UI already has the status-bar gap
+      reserved on mobile / tablet. Without this, the initial render has
+      `body { padding-top: 0 }` (the --safe-area-top fallback resolves
+      to 0 until the JS in SettingsApp.vue's onMounted runs), and the
+      Android status bar briefly overlays the top of the sidebar tab row
+      before the safe-area fix kicks in. safeArea.js later re-asserts
+      the value on <body> (where themeInit's injectTokens can't clobber
+      it) and listens to theme:changed to keep it intact.
+    -->
+    <script>
+      (function () {
+        try {
+          var ua = navigator.userAgent || '';
+          if (/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua)) {
+            // 28px = standard Android status bar; safe minimum that also
+            // covers landscape status bars (usually 24-28dp) and the iOS
+            // notch area. Pinned on <html> here for first-paint; safeArea.js
+            // migrates it to <body> once mounted so theme token re-injection
+            // (which wipes <html> --*) doesn't undo it.
+            document.documentElement.style.setProperty('--safe-area-top', '28px');
+          }
+        } catch (_) { /* non-fatal: settings page will still render */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>
