@@ -182,6 +182,50 @@ async fn list_remote_files(
     Some(set)
 }
 
+/// Pick the highest version tag from a ModelScope `/revisions` response.
+/// Tags like 'v0', 'v1', 'v1.0', '2' are considered; the highest numeric
+/// version wins. Non-numeric tags are ignored. Returns None if no valid tag.
+fn pick_latest_tag(data: &Value) -> Option<String> {
+    let tags = data
+        .get("Data")?
+        .get("RevisionMap")?
+        .get("Tags")?
+        .as_array()?;
+    let mut versions: Vec<(u64, String)> = Vec::new();
+    for t in tags {
+        // Skip entries without a usable revision string instead of bailing out.
+        let Some(rev) = t.get("Revision").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        // Extract the leading numeric component (handles 'v0', 'v1', '2', 'v1.0').
+        let digits: String = rev
+            .chars()
+            .skip_while(|c| !c.is_ascii_digit())
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        if let Ok(n) = digits.parse::<u64>() {
+            versions.push((n, rev.to_string()));
+        }
+    }
+    versions.sort_by_key(|(n, _)| *n);
+    versions.last().map(|(_, tag)| tag.clone())
+}
+
+/// Fetch the latest version tag for a ModelScope repo. Returns None on any
+/// failure or when the repo has no usable tags (caller falls back to master).
+async fn fetch_latest_tag(client: &reqwest::Client, repo: &str) -> Option<String> {
+    let url = format!(
+        "{}/api/v1/models/{}/revisions",
+        MODELSCOPE_ENDPOINT, repo
+    );
+    let resp = client.get(&url).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let data: Value = resp.json().await.ok()?;
+    pick_latest_tag(&data)
+}
+
 /// Minimal percent-encoding for path/revision segments. Avoids pulling in the
 /// `urlencoding` crate for two call sites.
 mod urlencoding {
@@ -373,20 +417,40 @@ pub async fn run_download(
         let mut g = dl_state.cancel.lock().await;
         *g = false;
     }
-    // Resolve the revision. The renderer uses 'latest' as the default selection,
-    // but ModelScope only accepts concrete branch/tag names — passing 'latest'
-    // verbatim makes the download endpoint return HTTP 404. The main project
-    // resolves 'latest' to a concrete revision; here we map it (and the empty
-    // string) to the universally-available master branch, which is the only
-    // revision wired up for this build.
-    let revision = match revision.as_str() {
-        "" | "latest" => DEFAULT_REVISION.to_string(),
-        other => other.to_string(),
-    };
     let precision = if precision.is_empty() {
         DEFAULT_PRECISION.to_string()
     } else {
         precision
+    };
+
+    // Build the HTTP client and resolve the SVS repo up-front so we can
+    // resolve the revision (which may need to query ModelScope for tags).
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let svs_repo = model_id_for_precision(&precision)
+        .unwrap_or(model_id_for_precision(DEFAULT_PRECISION).unwrap())
+        .to_string();
+
+    // Resolve the revision. The renderer uses 'latest' as the default selection,
+    // but ModelScope only accepts concrete branch/tag names — passing 'latest'
+    // verbatim makes the download endpoint return HTTP 404. Following the main
+    // project, we manage models by version **tag** (independent of branches):
+    // 'latest' resolves to the newest ModelScope tag (e.g. 'v0'); only when the
+    // repo has no usable tag do we fall back to the master branch.
+    let revision = match revision.as_str() {
+        "" | "latest" => match fetch_latest_tag(&client, &svs_repo).await {
+            Some(tag) => {
+                println!("[Models] Resolved 'latest' to tag: {tag}");
+                tag
+            }
+            None => {
+                println!("[Models] No model tag found, falling back to {DEFAULT_REVISION}");
+                DEFAULT_REVISION.to_string()
+            }
+        },
+        other => other.to_string(),
     };
 
     // Announce the active precision so the renderer UI syncs.
@@ -405,14 +469,6 @@ pub async fn run_download(
 
     let settings = read_settings(&app);
     let model_dir = resolve_model_dir(&app, &settings);
-    let svs_repo = model_id_for_precision(&precision)
-        .unwrap_or(model_id_for_precision(DEFAULT_PRECISION).unwrap())
-        .to_string();
-
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .build()
-        .map_err(|e| e.to_string())?;
 
     for file in &missing {
         let file_path = file["filePath"].as_str().ok_or("bad file entry")?;
