@@ -87,6 +87,7 @@
 import { ref, onMounted } from 'vue';
 import * as spa from '../../../spa/router.js';
 import { BENCHMARK_MODEL_BASE64 } from '../../../assets/benchmark_model.js';
+import { ensureOrt } from '../../../inference/webnn/ortSetup.js';
 
 const visible = ref(false);
 const step = ref(1);
@@ -111,6 +112,24 @@ async function runBenchmark() {
 
   const results = [];
 
+  // 使用与应用推理相同的 ONNX Runtime 实例（ensureOrt 会优先加载原生后端，
+  // 否则注入 ort.all.min.js 的 onnxruntime-web UMD 并配置好 WASM 路径）。
+  // 之前直接用 import('onnxruntime-web') 的 npm 包，未配置 WASM 路径，
+  // 且 EP 名用错（cpu/nnapi/webgl），导致 CPU/GPU/NPU 全部显示"不支持"。
+  let ort;
+  try {
+    ort = await ensureOrt();
+  } catch (err) {
+    console.warn('[benchmark] Failed to load ONNX Runtime:', err);
+    benchResults.value = [
+      { ep: 'cpu', label: 'CPU', icon: '\u{2699}\u{FE0F}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
+      { ep: 'nnapi', label: 'NPU (NNAPI)', icon: '\u{1F9EE}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
+      { ep: 'webgl', label: 'GPU (WebNN)', icon: '\u{1F3AE}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
+    ];
+    benchLoading.value = false;
+    return;
+  }
+
   // Decode base64 model to Uint8Array
   const binaryString = atob(BENCHMARK_MODEL_BASE64);
   const modelBytes = new Uint8Array(binaryString.length);
@@ -118,13 +137,13 @@ async function runBenchmark() {
     modelBytes[i] = binaryString.charCodeAt(i);
   }
 
-  // Test data: [1, 64, 64] float32
+  // Test data: [1, 64, 64] float32 — 与模型 MatMul 输入维度一致
   const inputSize = 64 * 64;
   const inputData = new Float32Array(inputSize);
   for (let i = 0; i < inputSize; i++) {
     inputData[i] = Math.random();
   }
-  const inputTensor = { input: inputData };
+  const inputTensor = { input: new ort.Tensor('float32', inputData, [1, 64, 64]) };
 
   const WARMUP_ITERS = 10;
   const BENCH_ITERS = 50;
@@ -132,9 +151,8 @@ async function runBenchmark() {
   // --- CPU benchmark ---
   try {
     benchStatus.value = '正在测试 CPU 算力...';
-    const ort = await import('onnxruntime-web');
     const session = await ort.InferenceSession.create(modelBytes, {
-      executionProviders: ['cpu'],
+      executionProviders: ['wasm'],
       graphOptimizationLevel: 'all',
     });
 
@@ -179,9 +197,8 @@ async function runBenchmark() {
   // --- NNAPI (NPU) benchmark (Android-specific) ---
   try {
     benchStatus.value = '正在测试 NPU (NNAPI) 算力...';
-    const ort = await import('onnxruntime-web');
     const session = await ort.InferenceSession.create(modelBytes, {
-      executionProviders: ['nnapi'],
+      executionProviders: [{ name: 'webnn', deviceType: 'npu' }],
       graphOptimizationLevel: 'all',
     });
 
@@ -220,12 +237,11 @@ async function runBenchmark() {
     });
   }
 
-  // --- GPU (WebGL) benchmark ---
+  // --- GPU (WebNN) benchmark ---
   try {
     benchStatus.value = '正在测试 GPU 算力...';
-    const ort = await import('onnxruntime-web');
     const session = await ort.InferenceSession.create(modelBytes, {
-      executionProviders: ['webgl'],
+      executionProviders: [{ name: 'webnn', deviceType: 'gpu' }],
       graphOptimizationLevel: 'all',
     });
 
@@ -241,7 +257,7 @@ async function runBenchmark() {
 
     results.push({
       ep: 'webgl',
-      label: 'GPU (WebGL)',
+      label: 'GPU (WebNN)',
       icon: '\u{1F3AE}',
       available: true,
       avgMs,
@@ -254,7 +270,7 @@ async function runBenchmark() {
     console.info('[benchmark] WebGL not available:', err.message);
     results.push({
       ep: 'webgl',
-      label: 'GPU (WebGL)',
+      label: 'GPU (WebNN)',
       icon: '\u{1F3AE}',
       available: false,
       avgMs: 0,
