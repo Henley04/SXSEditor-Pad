@@ -373,10 +373,15 @@ pub async fn run_download(
         let mut g = dl_state.cancel.lock().await;
         *g = false;
     }
-    let revision = if revision.is_empty() {
-        DEFAULT_REVISION.to_string()
-    } else {
-        revision
+    // Resolve the revision. The renderer uses 'latest' as the default selection,
+    // but ModelScope only accepts concrete branch/tag names — passing 'latest'
+    // verbatim makes the download endpoint return HTTP 404. The main project
+    // resolves 'latest' to a concrete revision; here we map it (and the empty
+    // string) to the universally-available master branch, which is the only
+    // revision wired up for this build.
+    let revision = match revision.as_str() {
+        "" | "latest" => DEFAULT_REVISION.to_string(),
+        other => other.to_string(),
     };
     let precision = if precision.is_empty() {
         DEFAULT_PRECISION.to_string()
