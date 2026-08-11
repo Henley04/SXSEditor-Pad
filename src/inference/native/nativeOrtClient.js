@@ -92,7 +92,9 @@ export class NativeInferenceSession {
             enableCpuMemArena: options.enableCpuMemArena,
             intraOpNumThreads: options.intraOpNumThreads,
             interOpNumThreads: options.interOpNumThreads,
-            devicePreference: epToDevicePreference(options.executionProviders),
+            // Prefer explicit devicePreference if provided; fall back to
+            // deriving it from executionProviders (for ort-web compat).
+            devicePreference: options.devicePreference || epToDevicePreference(options.executionProviders),
         };
         const result = await window.electronAPI.nativeOrtLoadModel(modelId, modelPath, sessionOptions);
         if (!result || result.success !== true) {

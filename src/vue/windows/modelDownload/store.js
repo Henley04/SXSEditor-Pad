@@ -338,11 +338,16 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
   // payloads here. Routing rules (skip main-model UI updates while an optional
   // model is downloading) are preserved exactly.
 
-  function handleMissingFiles(files) {
+  function handleMissingFiles(payload) {
     // Skip main-model UI updates when an optional model (JP/SiFiGAN) is being
     // downloaded — those flows reuse the same IPC events but should not reset
     // the main model panel.
     if (jpIsDownloading.value || sifiganIsDownloading.value) return;
+
+    // The IPC event payload is { files: [...], precision: "..." }.
+    // Extract the files array; if the caller already passed an array
+    // (e.g. from init()), use it directly.
+    const files = Array.isArray(payload) ? payload : (payload?.files || []);
 
     missingFiles.value = files.slice();
     // 清除旧的文件状态
@@ -415,7 +420,8 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
   function handleFileStart(data) {
     // Skip for optional model downloads (JP/SiFiGAN)
     if (jpIsDownloading.value || sifiganIsDownloading.value) return;
-    fileStates.value[data.filePath] = { status: 'downloading', progress: 0, downloaded: 0, total: 0 };
+    const filePath = data?.filePath || data?.fileName || '';
+    fileStates.value[filePath] = { status: 'downloading', progress: 0, downloaded: 0, total: data?.fileSize || 0 };
     // 统计当前正在下载的文件数
     const states = Object.values(fileStates.value);
     const downloadingCount = states.filter((s) => s.status === 'downloading').length;
@@ -431,7 +437,8 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
   function handleFileComplete(data) {
     // Skip for optional model downloads (JP/SiFiGAN)
     if (jpIsDownloading.value || sifiganIsDownloading.value) return;
-    const state = fileStates.value[data.filePath];
+    const filePath = data?.filePath || data?.fileName || '';
+    const state = fileStates.value[filePath];
     if (state) {
       state.status = 'complete';
     }

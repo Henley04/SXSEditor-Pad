@@ -53,9 +53,10 @@
                 <span v-else class="bench-unavailable">不支持</span>
               </div>
               <div v-if="r.available" class="bench-metrics">
-                <span class="bench-time">{{ r.avgMs.toFixed(2) }} ms</span>
-                <span class="bench-gops">{{ formatGops(r.gops) }}</span>
-                <span class="bench-speed" :class="r.speedClass">{{ r.speedLabel }}</span>
+                <span v-if="r.avgMs > 0" class="bench-time">{{ r.avgMs.toFixed(2) }} ms</span>
+                <span v-if="r.tops > 0" class="bench-tops">{{ formatTops(r.tops) }}</span>
+                <span v-if="r.avgMs > 0" class="bench-speed" :class="r.speedClass">{{ r.speedLabel }}</span>
+                <span v-if="r.avgMs === 0" class="bench-available-no-bench">可用</span>
               </div>
             </div>
           </div>
@@ -158,10 +159,10 @@ async function runBenchmark() {
   } catch (err) {
     console.warn('[benchmark] Failed to load ONNX Runtime:', err);
     benchResults.value = [
-      { ep: 'cpu', label: 'CPU', icon: '\u{2699}\u{FE0F}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
-      { ep: 'npu', label: 'NPU', icon: '\u{1F9EE}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
-      { ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
-      { ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
+      { ep: 'cpu', label: 'CPU', icon: '\u{2699}\u{FE0F}', available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '' },
+      { ep: 'npu', label: 'NPU', icon: '\u{1F9EE}', available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '' },
+      { ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}', available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '' },
+      { ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}', available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '' },
     ];
     benchLoading.value = false;
     return;
@@ -233,7 +234,7 @@ async function runBenchmark() {
 
   /**
    * Run a benchmark for one device preference.
-   * Returns { available: true, avgMs, gops } on success,
+   * Returns { available: true, avgMs, tops } on success,
    * or { available: false } on failure.
    */
   async function benchOne(devicePref) {
@@ -249,12 +250,12 @@ async function runBenchmark() {
     const t1 = performance.now();
     const avgMs = (t1 - t0) / BENCH_ITERS;
     session.release();
-    // Estimate GOPS: the benchmark model is a MatMul [1,64,64] x [64,64],
+    // Estimate TOPS: the benchmark model is a MatMul [1,64,64] x [64,64],
     // = 2 * 64 * 64 * 64 = 524288 FLOPs per inference.
-    // GOPS = FLOPs / (avgMs * 1e-3) / 1e9
+    // TOPS = FLOPs / (avgMs * 1e-3) / 1e12
     const FLOPS_PER_INFER = 2 * 64 * 64 * 64;
-    const gops = (FLOPS_PER_INFER / (avgMs * 1e-3)) / 1e9;
-    return { available: true, avgMs, gops };
+    const tops = (FLOPS_PER_INFER / (avgMs * 1e-3)) / 1e12;
+    return { available: true, avgMs, tops };
   }
 
   // --- CPU benchmark ---
@@ -267,7 +268,7 @@ async function runBenchmark() {
       icon: '\u{2699}\u{FE0F}',
       available: true,
       avgMs: r.avgMs,
-      gops: r.gops,
+      tops: r.tops,
       device: getCPUName(),
       speedLabel: getSpeedLabel(r.avgMs),
       speedClass: getSpeedClass(r.avgMs),
@@ -276,15 +277,16 @@ async function runBenchmark() {
     console.warn('[benchmark] CPU test failed:', err);
     results.push({
       ep: 'cpu', label: 'CPU', icon: '\u{2699}\u{FE0F}',
-      available: false, avgMs: 0, gops: 0, device: '', speedLabel: '', speedClass: '',
+      available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
     });
   }
 
   // --- NPU benchmark ---
-  // We attempt the benchmark regardless of accelerator detection, because
-  // platform_accelerators() only reports compile-time EP availability, not
-  // runtime hardware presence. If session creation fails, the EP is marked
-  // unavailable.
+  // If the native backend reports NPU as available (NNAPI/CoreML compiled in),
+  // attempt the benchmark. If session creation fails at runtime (no NPU
+  // hardware), fall back to the accelerator detection result so the UI
+  // is consistent with the settings page.
+  const npuDetected = accelerators && accelerators.npu;
   try {
     benchStatus.value = '正在测试 NPU 算力...';
     const r = await benchOne('npu');
@@ -294,20 +296,24 @@ async function runBenchmark() {
       icon: '\u{1F9EE}',
       available: true,
       avgMs: r.avgMs,
-      gops: r.gops,
+      tops: r.tops,
       device: native ? 'NPU (NNAPI/CoreML)' : 'NPU (WebNN)',
       speedLabel: getSpeedLabel(r.avgMs),
       speedClass: getSpeedClass(r.avgMs),
     });
   } catch (err) {
     console.info('[benchmark] NPU not available:', err.message);
+    // If accelerator detection says available but benchmark failed, still
+    // show it as available with no performance data (consistent with settings).
     results.push({
       ep: 'npu', label: 'NPU', icon: '\u{1F9EE}',
-      available: false, avgMs: 0, gops: 0, device: '', speedLabel: '', speedClass: '',
+      available: npuDetected || false, avgMs: 0, tops: 0,
+      device: npuDetected ? 'NPU (NNAPI/CoreML)' : '', speedLabel: '', speedClass: '',
     });
   }
 
   // --- GPU benchmark ---
+  const gpuDetected = accelerators && accelerators.gpu;
   try {
     benchStatus.value = '正在测试 GPU 算力...';
     const r = await benchOne('gpu');
@@ -317,7 +323,7 @@ async function runBenchmark() {
       icon: '\u{1F3AE}',
       available: true,
       avgMs: r.avgMs,
-      gops: r.gops,
+      tops: r.tops,
       device: getGPUName(),
       speedLabel: getSpeedLabel(r.avgMs),
       speedClass: getSpeedClass(r.avgMs),
@@ -326,11 +332,13 @@ async function runBenchmark() {
     console.info('[benchmark] GPU not available:', err.message);
     results.push({
       ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}',
-      available: false, avgMs: 0, gops: 0, device: '', speedLabel: '', speedClass: '',
+      available: gpuDetected || false, avgMs: 0, tops: 0,
+      device: gpuDetected ? 'GPU (NNAPI/CoreML)' : '', speedLabel: '', speedClass: '',
     });
   }
 
   // --- DSP benchmark (Android only via NNAPI) ---
+  const dspDetected = accelerators && accelerators.dsp;
   try {
     benchStatus.value = '正在测试 DSP 算力...';
     const r = await benchOne('dsp');
@@ -340,7 +348,7 @@ async function runBenchmark() {
       icon: '\u{1F5A5}',
       available: true,
       avgMs: r.avgMs,
-      gops: r.gops,
+      tops: r.tops,
       device: 'DSP (Hexagon/QDSP)',
       speedLabel: getSpeedLabel(r.avgMs),
       speedClass: getSpeedClass(r.avgMs),
@@ -349,7 +357,8 @@ async function runBenchmark() {
     console.info('[benchmark] DSP not available:', err.message);
     results.push({
       ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}',
-      available: false, avgMs: 0, gops: 0, device: '', speedLabel: '', speedClass: '',
+      available: dspDetected || false, avgMs: 0, tops: 0,
+      device: dspDetected ? 'DSP (Hexagon/QDSP)' : '', speedLabel: '', speedClass: '',
     });
   }
 
@@ -400,10 +409,11 @@ function getSpeedClass(ms) {
   return 'speed-slow';
 }
 
-function formatGops(gops) {
-  if (!gops || gops <= 0) return '';
-  if (gops >= 1) return gops.toFixed(2) + ' GOPS';
-  return (gops * 1000).toFixed(1) + ' MOPS';
+function formatTops(tops) {
+  if (!tops || tops <= 0) return '';
+  if (tops >= 1) return tops.toFixed(2) + ' TOPS';
+  if (tops >= 0.001) return (tops * 1000).toFixed(2) + ' GOPS';
+  return (tops * 1e6).toFixed(1) + ' MOPS';
 }
 
 function complete() {
@@ -595,9 +605,15 @@ watch(step, (newStep) => {
   color: var(--fg-primary, #e0e0f0);
 }
 
-.bench-gops {
+.bench-tops {
   font-size: 11px;
   color: var(--accent, #5b8def);
+  font-weight: 500;
+}
+
+.bench-available-no-bench {
+  font-size: 11px;
+  color: var(--success, #22c55e);
   font-weight: 500;
 }
 

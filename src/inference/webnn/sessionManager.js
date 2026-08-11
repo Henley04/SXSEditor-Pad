@@ -211,6 +211,12 @@ export async function loadModel(modelId, modelPath, options = { deviceType: 'npu
     // 原生后端附加参数（__ 前缀；传给 onnxruntime-web 前必须剥离）
     sessionOptions.__modelPath = modelPath;
     sessionOptions.__modelId = modelId;
+    // Pass device preference explicitly so NativeInferenceSession.create
+    // uses it directly instead of deriving from executionProviders (which
+    // would always resolve to the first EP in the chain, not 'auto').
+    if (useNative && userDevicePref) {
+        sessionOptions.devicePreference = userDevicePref;
+    }
 
     let lastError = null;
     for (const ep of epChain) {

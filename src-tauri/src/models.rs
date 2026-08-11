@@ -308,6 +308,40 @@ pub async fn check_missing(app: &AppHandle, precision: &str, revision: &str) -> 
     missing
 }
 
+/// Overall download progress tracker. Tracks the total size of all files and
+/// the cumulative downloaded bytes, so the renderer can show an overall
+/// progress bar and speed.
+pub struct DownloadOverall {
+    total: Mutex<u64>,
+    downloaded: Mutex<u64>,
+}
+
+impl DownloadOverall {
+    pub fn new() -> Self {
+        Self {
+            total: Mutex::new(0),
+            downloaded: Mutex::new(0),
+        }
+    }
+
+    /// Register a file's total size (may be 0 if Content-Length is missing).
+    pub async fn add_file(&self, size: u64) {
+        let mut g = self.total.lock().await;
+        *g += size;
+    }
+
+    /// Atomically add downloaded bytes and return the new overall downloaded.
+    pub async fn add_downloaded(&self, delta: u64) -> u64 {
+        let mut g = self.downloaded.lock().await;
+        *g += delta;
+        *g
+    }
+
+    pub async fn total(&self) -> u64 {
+        *self.total.lock().await
+    }
+}
+
 /// Download state shared across commands (cancel flag).
 pub struct DownloadState {
     pub cancel: Mutex<bool>,
@@ -330,6 +364,11 @@ impl DownloadState {
 
 /// Stream a single file from ModelScope to `dest`, emitting progress events.
 /// Honors the cancel flag between chunks.
+///
+/// Event field names MUST match what the renderer store expects:
+///   file-start:    { filePath, fileName, fileSize }
+///   progress:      { currentFile, bytesDownloaded, bytesTotal, overallDownloaded, overallTotal }
+///   file-complete: { filePath, fileName }
 async fn download_one(
     app: &AppHandle,
     client: &reqwest::Client,
@@ -338,6 +377,7 @@ async fn download_one(
     file_id: &str,
     file_name: &str,
     cancel: &Mutex<bool>,
+    overall: &DownloadOverall,
 ) -> Result<(), String> {
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent)
@@ -354,9 +394,12 @@ async fn download_one(
     }
     let total = resp.content_length().unwrap_or(0);
 
+    // Register this file's size in the overall tracker.
+    overall.add_file(total).await;
+
     let _ = app.emit(
         "model-download:file-start",
-        json!({ "fileId": file_id, "fileName": file_name, "fileSize": total }),
+        json!({ "filePath": file_name, "fileName": file_name, "fileSize": total }),
     );
 
     let tmp = dest.with_extension("download");
@@ -378,13 +421,19 @@ async fn download_one(
         let bytes = chunk.map_err(|e| e.to_string())?;
         file.write_all(&bytes).await.map_err(|e| e.to_string())?;
         downloaded += bytes.len() as u64;
+
+        // Update overall progress: add the delta to the overall downloaded counter.
+        let overall_dl = overall.add_downloaded(bytes.len() as u64).await;
+        let overall_total = overall.total().await;
+
         let _ = app.emit(
             "model-download:progress",
             json!({
-                "fileId": file_id,
-                "fileName": file_name,
-                "downloaded": downloaded,
-                "total": total,
+                "currentFile": file_name,
+                "bytesDownloaded": downloaded,
+                "bytesTotal": total,
+                "overallDownloaded": overall_dl,
+                "overallTotal": overall_total,
             }),
         );
     }
@@ -396,7 +445,7 @@ async fn download_one(
 
     let _ = app.emit(
         "model-download:file-complete",
-        json!({ "fileId": file_id, "fileName": file_name }),
+        json!({ "filePath": file_name, "fileName": file_name }),
     );
     Ok(())
 }
@@ -470,6 +519,8 @@ pub async fn run_download(
     let settings = read_settings(&app);
     let model_dir = resolve_model_dir(&app, &settings);
 
+    let overall = DownloadOverall::new();
+
     for file in &missing {
         let file_path = file["filePath"].as_str().ok_or("bad file entry")?;
         let file_id = file["fileId"].as_str().unwrap_or("");
@@ -488,6 +539,7 @@ pub async fn run_download(
             file_id,
             file_path,
             &dl_state.cancel,
+            &overall,
         )
         .await
         {
