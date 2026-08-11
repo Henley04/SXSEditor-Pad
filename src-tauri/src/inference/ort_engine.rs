@@ -115,6 +115,8 @@ impl NativeSessionOptions {
 pub struct AcceleratorInfo {
     pub nnapi: bool,
     pub coreml: bool,
+    /// DSP is available via NNAPI on Android (Hexagon/QDSP).
+    pub dsp: bool,
 }
 
 fn platform_accelerators() -> AcceleratorInfo {
@@ -124,6 +126,9 @@ fn platform_accelerators() -> AcceleratorInfo {
         // so advertising the EP here only means "will be attempted".
         nnapi: cfg!(target_os = "android"),
         coreml: cfg!(target_os = "ios"),
+        // DSP acceleration is only available through NNAPI on Android
+        // (Qualcomm Hexagon DSP). On other platforms, DSP is not applicable.
+        dsp: cfg!(target_os = "android"),
     }
 }
 
@@ -201,6 +206,7 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
                 "accelerators": {
                     "nnapi": platform_accelerators().nnapi,
                     "coreml": platform_accelerators().coreml,
+                    "dsp": platform_accelerators().dsp,
                 }
             });
         }
@@ -227,6 +233,7 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
                             "accelerators": {
                                 "nnapi": platform_accelerators().nnapi,
                                 "coreml": platform_accelerators().coreml,
+                                "dsp": platform_accelerators().dsp,
                             }
                         });
                     }
@@ -243,6 +250,7 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
                             "accelerators": {
                                 "nnapi": platform_accelerators().nnapi,
                                 "coreml": platform_accelerators().coreml,
+                                "dsp": platform_accelerators().dsp,
                             }
                         });
                     }
@@ -263,7 +271,7 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
     json!({
         "available": false,
         "error": if last_err.is_empty() { "libonnxruntime not found".to_string() } else { last_err },
-        "accelerators": { "nnapi": false, "coreml": false }
+        "accelerators": { "nnapi": false, "coreml": false, "dsp": false }
     })
 }
 
@@ -274,13 +282,30 @@ pub fn is_ready() -> bool {
 /// Build the EP list for the requested device preference. Accelerators fail
 /// softly (CPU fallback inside ORT) so a session always commits when the
 /// model itself is valid.
+///
+/// Device preferences:
+///   "cpu"  → CPU only
+///   "gpu"  → NNAPI (Android) / CoreML (iOS) with GPU preference + CPU fallback
+///   "npu"  → NNAPI (Android) / CoreML (iOS) with NPU preference + CPU fallback
+///   "dsp"  → NNAPI with DSP preference (Android only) + CPU fallback
 fn execution_providers_for(device: &str) -> (Vec<ep::ExecutionProviderDispatch>, &'static str) {
     #[cfg(target_os = "android")]
     {
         match device {
-            "npu" | "gpu" => (
+            "npu" => (
                 vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
-                "nnapi+cpu",
+                "nnapi-npu+cpu",
+            ),
+            "gpu" => (
+                vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
+                "nnapi-gpu+cpu",
+            ),
+            "dsp" => (
+                // NNAPI will internally route to DSP (Hexagon) when the device
+                // supports it. The same NNAPI EP covers NPU/GPU/DSP — the
+                // device preference is a hint to the NNAPI runtime.
+                vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
+                "nnapi-dsp+cpu",
             ),
             _ => (vec![ep::CPU::default().build()], "cpu"),
         }
@@ -288,7 +313,7 @@ fn execution_providers_for(device: &str) -> (Vec<ep::ExecutionProviderDispatch>,
     #[cfg(target_os = "ios")]
     {
         match device {
-            "npu" | "gpu" => (
+            "npu" | "gpu" | "dsp" => (
                 vec![ep::CoreML::default().build(), ep::CPU::default().build()],
                 "coreml+cpu",
             ),
@@ -607,6 +632,7 @@ pub fn status() -> JsonValue {
         "accelerators": {
             "nnapi": platform_accelerators().nnapi,
             "coreml": platform_accelerators().coreml,
+            "dsp": platform_accelerators().dsp,
         }
     })
 }
@@ -651,11 +677,20 @@ mod tests {
         let (eps, label) = execution_providers_for("npu");
         assert!(!eps.is_empty());
         #[cfg(target_os = "android")]
-        assert_eq!(label, "nnapi+cpu");
+        assert_eq!(label, "nnapi-npu+cpu");
         #[cfg(target_os = "ios")]
         assert_eq!(label, "coreml+cpu");
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         assert_eq!(label, "cpu");
+
+        // DSP is only meaningful on Android
+        let (_dsp_eps, dsp_label) = execution_providers_for("dsp");
+        #[cfg(target_os = "android")]
+        assert_eq!(dsp_label, "nnapi-dsp+cpu");
+        #[cfg(not(target_os = "android"))]
+        {
+            let _ = dsp_label;
+        }
     }
 
     #[test]

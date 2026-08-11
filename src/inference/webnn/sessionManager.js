@@ -114,9 +114,34 @@ export async function loadModel(modelId, modelPath, options = { deviceType: 'npu
     // Allow per-model timeout override (vocoder needs longer NPU compilation time)
     const epTimeout = options.timeout || (modelId === 'vocoder' ? WEBNN_VOCODER_TIMEOUT : WEBNN_EP_TIMEOUT);
 
+    // On the native backend, check user's device preference from settings.
+    // This allows the user to override the per-model deviceType with a global
+    // preference (cpu/gpu/npu/dsp/auto) from the settings panel.
+    let userDevicePref = null;
+    if (useNative) {
+        try {
+            const ortSettings = await window.electronAPI?.getSettings?.();
+            if (ortSettings && ortSettings.devicePreference) {
+                userDevicePref = ortSettings.devicePreference;
+            }
+        } catch (_) { /* use default deviceType */ }
+    }
+
     // 回退链：WebNN NPU → WebNN GPU → WASM
+    // On native backend with user devicePreference, respect the user's choice.
     const epChain = [];
-    if (deviceType === 'npu') {
+    if (userDevicePref && userDevicePref !== 'auto') {
+        // User explicitly selected a device — use it directly
+        if (userDevicePref === 'dsp') {
+            epChain.push({ name: 'webnn', deviceType: 'dsp' });
+        } else if (userDevicePref === 'npu') {
+            epChain.push({ name: 'webnn', deviceType: 'npu' });
+            epChain.push({ name: 'webnn', deviceType: 'gpu' });
+        } else if (userDevicePref === 'gpu') {
+            epChain.push({ name: 'webnn', deviceType: 'gpu' });
+        }
+        // 'cpu' → only wasm in chain
+    } else if (deviceType === 'npu') {
         epChain.push({ name: 'webnn', deviceType: 'npu' });
         epChain.push({ name: 'webnn', deviceType: 'gpu' });
     } else if (deviceType === 'gpu') {

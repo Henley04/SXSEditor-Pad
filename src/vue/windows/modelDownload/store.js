@@ -42,7 +42,7 @@ function resolveLatestTag(tags) {
 }
 
 function formatSpeed(bytesPerSec) {
-  if (bytesPerSec <= 0) return '';
+  if (!Number.isFinite(bytesPerSec) || bytesPerSec <= 0) return '';
   return formatBytes(bytesPerSec) + '/s';
 }
 
@@ -311,7 +311,12 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
   }
 
   function updateOverallProgress(overallDownloaded, overallTotal) {
-    let percent = overallTotal > 0 ? Math.round((overallDownloaded / overallTotal) * 100) : 0;
+    // Guard against undefined/null/non-numeric values from Rust progress events
+    // (e.g. before HTTP Content-Length headers arrive during initial connection).
+    const dl = Number.isFinite(overallDownloaded) ? overallDownloaded : 0;
+    const total = Number.isFinite(overallTotal) ? overallTotal : 0;
+
+    let percent = total > 0 ? Math.round((dl / total) * 100) : 0;
     percent = Math.min(Math.max(percent, 0), 100);
     overallPercent.value = percent;
     overallBarWidth.value = `${percent}%`;
@@ -319,11 +324,11 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
     const now = Date.now();
     if (downloadStartTime > 0 && now - lastSpeedTime > 500) {
       const elapsed = (now - lastSpeedTime) / 1000;
-      const diff = overallDownloaded - lastOverallDownloaded;
+      const diff = dl - lastOverallDownloaded;
       const speed = diff / elapsed;
       speedInfo.value = formatSpeed(speed);
       lastSpeedTime = now;
-      lastOverallDownloaded = overallDownloaded;
+      lastOverallDownloaded = dl;
     }
   }
 
@@ -397,6 +402,7 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
     // downloaded — those flows reuse the same IPC events but should not update
     // the main model progress bar / file list.
     if (jpIsDownloading.value || sifiganIsDownloading.value) return;
+    if (!data) return;
     const state = fileStates.value[data.currentFile];
     if (state) {
       state.status = 'downloading';

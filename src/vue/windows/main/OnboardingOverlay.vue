@@ -84,10 +84,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import * as spa from '../../../spa/router.js';
 import { BENCHMARK_MODEL_BASE64 } from '../../../assets/benchmark_model.js';
-import { ensureOrt } from '../../../inference/webnn/ortSetup.js';
+import { ensureOrt, isNativeBackend } from '../../../inference/webnn/ortSetup.js';
+import { detectNativeAccelerators } from '../../../inference/native/nativeOrtClient.js';
 
 const visible = ref(false);
 const step = ref(1);
@@ -105,6 +106,43 @@ onMounted(() => {
   }
 });
 
+/**
+ * Write the base64 benchmark model to a temporary file on disk.
+ * The native ORT backend requires a file path (__modelPath) to create
+ * sessions — it cannot create sessions from in-memory byte arrays.
+ * Returns the file path or null if writing failed.
+ */
+async function writeBenchmarkModelToDisk(modelBytes) {
+  try {
+    // Use the model download directory as a writable location
+    const modelDir = await window.electronAPI.modelDownloadGetDir();
+    if (!modelDir) return null;
+    // Use Tauri's fs plugin to write binary data
+    const { writeFile, mkdir } = await import('@tauri-apps/plugin-fs');
+    const sep = modelDir.includes('\\') ? '\\' : '/';
+    const benchPath = modelDir + sep + '.benchmark_model.onnx';
+    try {
+      await mkdir(modelDir, { recursive: true });
+    } catch (_) { /* dir may already exist */ }
+    await writeFile(benchPath, modelBytes);
+    return benchPath;
+  } catch (err) {
+    console.warn('[benchmark] Failed to write model to disk:', err);
+    return null;
+  }
+}
+
+/**
+ * Clean up the temporary benchmark model file.
+ */
+async function cleanupBenchmarkModel(filePath) {
+  if (!filePath) return;
+  try {
+    const { remove } = await import('@tauri-apps/plugin-fs');
+    await remove(filePath);
+  } catch (_) { /* non-fatal */ }
+}
+
 async function runBenchmark() {
   benchLoading.value = true;
   benchStatus.value = '正在加载 ONNX Runtime...';
@@ -112,10 +150,7 @@ async function runBenchmark() {
 
   const results = [];
 
-  // 使用与应用推理相同的 ONNX Runtime 实例（ensureOrt 会优先加载原生后端，
-  // 否则注入 ort.all.min.js 的 onnxruntime-web UMD 并配置好 WASM 路径）。
-  // 之前直接用 import('onnxruntime-web') 的 npm 包，未配置 WASM 路径，
-  // 且 EP 名用错（cpu/nnapi/webgl），导致 CPU/GPU/NPU 全部显示"不支持"。
+  // Load the same ORT instance the app uses (native ORT first, ort-web fallback).
   let ort;
   try {
     ort = await ensureOrt();
@@ -123,12 +158,15 @@ async function runBenchmark() {
     console.warn('[benchmark] Failed to load ONNX Runtime:', err);
     benchResults.value = [
       { ep: 'cpu', label: 'CPU', icon: '\u{2699}\u{FE0F}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
-      { ep: 'nnapi', label: 'NPU (NNAPI)', icon: '\u{1F9EE}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
-      { ep: 'webgl', label: 'GPU (WebNN)', icon: '\u{1F3AE}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
+      { ep: 'npu', label: 'NPU', icon: '\u{1F9EE}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
+      { ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
+      { ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}', available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '' },
     ];
     benchLoading.value = false;
     return;
   }
+
+  const native = isNativeBackend();
 
   // Decode base64 model to Uint8Array
   const binaryString = atob(BENCHMARK_MODEL_BASE64);
@@ -137,7 +175,18 @@ async function runBenchmark() {
     modelBytes[i] = binaryString.charCodeAt(i);
   }
 
-  // Test data: [1, 64, 64] float32 — 与模型 MatMul 输入维度一致
+  // For the native backend, write the model to a temp file and use __modelPath.
+  // For ort-web fallback, pass modelBytes directly.
+  let benchModelPath = null;
+  if (native) {
+    benchStatus.value = '正在准备基准测试模型...';
+    benchModelPath = await writeBenchmarkModelToDisk(modelBytes);
+    if (!benchModelPath) {
+      console.warn('[benchmark] Cannot write model to disk; native benchmark will fail.');
+    }
+  }
+
+  // Test data: [1, 64, 64] float32
   const inputSize = 64 * 64;
   const inputData = new Float32Array(inputSize);
   for (let i = 0; i < inputSize; i++) {
@@ -148,20 +197,43 @@ async function runBenchmark() {
   const WARMUP_ITERS = 10;
   const BENCH_ITERS = 50;
 
+  // Detect available native accelerators
+  let accelerators = null;
+  if (native) {
+    accelerators = await detectNativeAccelerators();
+    console.log('[benchmark] Native accelerators:', JSON.stringify(accelerators));
+  }
+
+  // Helper: create a session for the given device preference.
+  // For native backend: use __modelPath + devicePreference.
+  // For ort-web: use modelBytes + executionProviders.
+  async function createSession(devicePref) {
+    if (native && benchModelPath) {
+      return await ort.InferenceSession.create(null, {
+        __modelPath: benchModelPath,
+        __modelId: `bench-${devicePref}-${Date.now()}`,
+        executionProviders: devicePref === 'cpu' ? ['wasm'] : [{ name: 'webnn', deviceType: devicePref }],
+        graphOptimizationLevel: 'all',
+        devicePreference: devicePref,
+      });
+    } else {
+      return await ort.InferenceSession.create(modelBytes, {
+        executionProviders: devicePref === 'cpu'
+          ? ['wasm']
+          : [{ name: 'webnn', deviceType: devicePref }],
+        graphOptimizationLevel: 'all',
+      });
+    }
+  }
+
   // --- CPU benchmark ---
   try {
     benchStatus.value = '正在测试 CPU 算力...';
-    const session = await ort.InferenceSession.create(modelBytes, {
-      executionProviders: ['wasm'],
-      graphOptimizationLevel: 'all',
-    });
+    const session = await createSession('cpu');
 
-    // Warmup
     for (let i = 0; i < WARMUP_ITERS; i++) {
       await session.run(inputTensor);
     }
-
-    // Benchmark
     const t0 = performance.now();
     for (let i = 0; i < BENCH_ITERS; i++) {
       await session.run(inputTensor);
@@ -183,105 +255,146 @@ async function runBenchmark() {
   } catch (err) {
     console.warn('[benchmark] CPU test failed:', err);
     results.push({
-      ep: 'cpu',
-      label: 'CPU',
-      icon: '\u{2699}\u{FE0F}',
-      available: false,
-      avgMs: 0,
-      device: '',
-      speedLabel: '',
-      speedClass: '',
+      ep: 'cpu', label: 'CPU', icon: '\u{2699}\u{FE0F}',
+      available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
     });
   }
 
-  // --- NNAPI (NPU) benchmark (Android-specific) ---
-  try {
-    benchStatus.value = '正在测试 NPU (NNAPI) 算力...';
-    const session = await ort.InferenceSession.create(modelBytes, {
-      executionProviders: [{ name: 'webnn', deviceType: 'npu' }],
-      graphOptimizationLevel: 'all',
-    });
+  // --- NPU benchmark ---
+  // On native backend, skip individual EP benchmarks if the accelerator is
+  // not available — the native ORT engine handles EP fallback internally.
+  const npuAvailable = native ? (accelerators?.npu ?? false) : true;
+  if (npuAvailable) {
+    try {
+      benchStatus.value = '正在测试 NPU 算力...';
+      const session = await createSession('npu');
 
-    for (let i = 0; i < WARMUP_ITERS; i++) {
-      await session.run(inputTensor);
-    }
-    const t0 = performance.now();
-    for (let i = 0; i < BENCH_ITERS; i++) {
-      await session.run(inputTensor);
-    }
-    const t1 = performance.now();
-    const avgMs = (t1 - t0) / BENCH_ITERS;
+      for (let i = 0; i < WARMUP_ITERS; i++) {
+        await session.run(inputTensor);
+      }
+      const t0 = performance.now();
+      for (let i = 0; i < BENCH_ITERS; i++) {
+        await session.run(inputTensor);
+      }
+      const t1 = performance.now();
+      const avgMs = (t1 - t0) / BENCH_ITERS;
 
+      results.push({
+        ep: 'npu',
+        label: 'NPU',
+        icon: '\u{1F9EE}',
+        available: true,
+        avgMs,
+        device: native ? 'NPU (NNAPI/CoreML)' : 'NPU (WebNN)',
+        speedLabel: getSpeedLabel(avgMs),
+        speedClass: getSpeedClass(avgMs),
+      });
+      session.release();
+    } catch (err) {
+      console.info('[benchmark] NPU not available:', err.message);
+      results.push({
+        ep: 'npu', label: 'NPU', icon: '\u{1F9EE}',
+        available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
+      });
+    }
+  } else {
     results.push({
-      ep: 'nnapi',
-      label: 'NPU (NNAPI)',
-      icon: '\u{1F9EE}',
-      available: true,
-      avgMs,
-      device: 'NPU (NNAPI 加速)',
-      speedLabel: getSpeedLabel(avgMs),
-      speedClass: getSpeedClass(avgMs),
-    });
-    session.release();
-  } catch (err) {
-    console.info('[benchmark] NNAPI not available:', err.message);
-    results.push({
-      ep: 'nnapi',
-      label: 'NPU (NNAPI)',
-      icon: '\u{1F9EE}',
-      available: false,
-      avgMs: 0,
-      device: '',
-      speedLabel: '',
-      speedClass: '',
+      ep: 'npu', label: 'NPU', icon: '\u{1F9EE}',
+      available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
     });
   }
 
-  // --- GPU (WebNN) benchmark ---
-  try {
-    benchStatus.value = '正在测试 GPU 算力...';
-    const session = await ort.InferenceSession.create(modelBytes, {
-      executionProviders: [{ name: 'webnn', deviceType: 'gpu' }],
-      graphOptimizationLevel: 'all',
-    });
+  // --- GPU benchmark ---
+  const gpuAvailable = native ? (accelerators?.gpu ?? false) : true;
+  if (gpuAvailable) {
+    try {
+      benchStatus.value = '正在测试 GPU 算力...';
+      const session = await createSession('gpu');
 
-    for (let i = 0; i < WARMUP_ITERS; i++) {
-      await session.run(inputTensor);
-    }
-    const t0 = performance.now();
-    for (let i = 0; i < BENCH_ITERS; i++) {
-      await session.run(inputTensor);
-    }
-    const t1 = performance.now();
-    const avgMs = (t1 - t0) / BENCH_ITERS;
+      for (let i = 0; i < WARMUP_ITERS; i++) {
+        await session.run(inputTensor);
+      }
+      const t0 = performance.now();
+      for (let i = 0; i < BENCH_ITERS; i++) {
+        await session.run(inputTensor);
+      }
+      const t1 = performance.now();
+      const avgMs = (t1 - t0) / BENCH_ITERS;
 
+      results.push({
+        ep: 'gpu',
+        label: 'GPU',
+        icon: '\u{1F3AE}',
+        available: true,
+        avgMs,
+        device: getGPUName(),
+        speedLabel: getSpeedLabel(avgMs),
+        speedClass: getSpeedClass(avgMs),
+      });
+      session.release();
+    } catch (err) {
+      console.info('[benchmark] GPU not available:', err.message);
+      results.push({
+        ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}',
+        available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
+      });
+    }
+  } else {
     results.push({
-      ep: 'webgl',
-      label: 'GPU (WebNN)',
-      icon: '\u{1F3AE}',
-      available: true,
-      avgMs,
-      device: getGPUName(),
-      speedLabel: getSpeedLabel(avgMs),
-      speedClass: getSpeedClass(avgMs),
+      ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}',
+      available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
     });
-    session.release();
-  } catch (err) {
-    console.info('[benchmark] WebGL not available:', err.message);
+  }
+
+  // --- DSP benchmark (Android only via NNAPI) ---
+  const dspAvailable = native ? (accelerators?.dsp ?? false) : false;
+  if (dspAvailable) {
+    try {
+      benchStatus.value = '正在测试 DSP 算力...';
+      const session = await createSession('dsp');
+
+      for (let i = 0; i < WARMUP_ITERS; i++) {
+        await session.run(inputTensor);
+      }
+      const t0 = performance.now();
+      for (let i = 0; i < BENCH_ITERS; i++) {
+        await session.run(inputTensor);
+      }
+      const t1 = performance.now();
+      const avgMs = (t1 - t0) / BENCH_ITERS;
+
+      results.push({
+        ep: 'dsp',
+        label: 'DSP',
+        icon: '\u{1F5A5}',
+        available: true,
+        avgMs,
+        device: 'DSP (Hexagon/QDSP)',
+        speedLabel: getSpeedLabel(avgMs),
+        speedClass: getSpeedClass(avgMs),
+      });
+      session.release();
+    } catch (err) {
+      console.info('[benchmark] DSP not available:', err.message);
+      results.push({
+        ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}',
+        available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
+      });
+    }
+  } else {
     results.push({
-      ep: 'webgl',
-      label: 'GPU (WebNN)',
-      icon: '\u{1F3AE}',
-      available: false,
-      avgMs: 0,
-      device: '',
-      speedLabel: '',
-      speedClass: '',
+      ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}',
+      available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
     });
   }
 
   benchResults.value = results;
   benchLoading.value = false;
+
+  // Clean up temp model file
+  if (benchModelPath) {
+    cleanupBenchmarkModel(benchModelPath);
+  }
 }
 
 function getCPUName() {
@@ -333,7 +446,6 @@ async function goToModelDownload() {
 }
 
 // Watch for step changes to trigger benchmark
-import { watch } from 'vue';
 watch(step, (newStep) => {
   if (newStep === 2 && benchLoading.value && benchResults.value.length === 0) {
     runBenchmark();

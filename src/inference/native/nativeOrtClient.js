@@ -140,7 +140,10 @@ export function epToDevicePreference(eps) {
         return 'cpu';
     }
     if (first && first.name === 'webnn') {
-        return first.deviceType === 'npu' ? 'npu' : 'gpu';
+        if (first.deviceType === 'npu') return 'npu';
+        if (first.deviceType === 'gpu') return 'gpu';
+        if (first.deviceType === 'dsp') return 'dsp';
+        return first.deviceType || 'cpu';
     }
     return 'cpu';
 }
@@ -209,17 +212,18 @@ export async function getNativeStatus() {
 /** 原生加速器探测（替代 navigator.ml 的 WebNN 检测） */
 export async function detectNativeAccelerators() {
     if (!window.electronAPI?.nativeOrtDetectAccelerators) {
-        return { npu: false, gpu: false, cpu: true };
+        return { npu: false, gpu: false, dsp: false, cpu: true };
     }
     try {
         const acc = await window.electronAPI.nativeOrtDetectAccelerators();
         return {
             npu: Boolean(acc?.nnapi || acc?.coreml),
             gpu: Boolean(acc?.nnapi || acc?.coreml),
+            dsp: Boolean(acc?.dsp || acc?.nnapi),
             cpu: true,
             raw: acc,
         };
     } catch (_) {
-        return { npu: false, gpu: false, cpu: true };
+        return { npu: false, gpu: false, dsp: false, cpu: true };
     }
 }

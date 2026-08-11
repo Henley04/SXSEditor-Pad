@@ -1,12 +1,16 @@
 /**
- * 推理后端初始化 — 原生 ORT（优先）或 onnxruntime-web（回退）
+ * 推理后端初始化 — Rust ORT（唯一正式后端）或 onnxruntime-web（纯浏览器开发回退）
  *
  * 后端选择（ensureOrt）：
- *   1. 原生后端：Tauri 环境下经 src/inference/native/nativeOrtClient.js
- *      动态加载 libonnxruntime（Android NNAPI / iOS CoreML / 桌面 CPU）。
+ *   1. Rust ORT 后端（唯一正式后端）：Tauri 环境下经
+ *      src/inference/native/nativeOrtClient.js 动态加载 libonnxruntime
+ *      （Android NNAPI / iOS CoreML / 桌面 CPU）。
  *      推理在 Rust 侧执行，模型直读磁盘，张量走二进制帧。
- *   2. onnxruntime-web 回退：原生库不可用（如纯浏览器开发）时动态注入
- *      ort.all.min.js（WebNN NPU/GPU → WASM）。
+ *      设备偏好（CPU/GPU/NPU/DSP）通过 settings 中的 devicePreference
+ *      字段传递给 Rust 侧的 NativeSessionOptions。
+ *   2. onnxruntime-web 回退：仅在纯浏览器开发环境（无 Tauri）下使用，
+ *      动态注入 ort.all.min.js（WebNN NPU/GPU → WASM）。
+ *      正式构建中不会走此路径。
  *
  * 两条路径暴露相同的 Tensor / InferenceSession 接口，管线代码无感知。
  */
@@ -59,15 +63,16 @@ function loadOrtScript() {
 export async function ensureOrt() {
     if (ort) return ort;
 
-    // Backend 1: native ORT (Tauri). Loaded from disk, executes in Rust.
+    // Backend 1: Rust ORT (sole production backend). Loaded from disk, executes in Rust.
     const native = await tryInitNativeBackend();
     if (native) {
         ort = native;
-        console.log('[Inference] Using native ONNX Runtime backend (NNAPI/CoreML/CPU)');
+        console.log('[Inference] Using Rust ORT backend (NNAPI/CoreML/DSP/CPU)');
         return ort;
     }
 
-    // Backend 2: onnxruntime-web UMD (browser dev / fallback).
+    // Backend 2: onnxruntime-web UMD (browser dev fallback only).
+    console.warn('[Inference] Native ORT not available, falling back to onnxruntime-web (dev mode)');
     if (typeof window === 'undefined' || !window.ort) {
         await loadOrtScript();
     }

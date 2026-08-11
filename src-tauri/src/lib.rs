@@ -936,12 +936,32 @@ async fn settings_get_dml_devices() -> Result<Value, String> {
 
 #[tauri::command]
 async fn settings_get_hardware_status() -> Result<Value, String> {
-    Ok(json!({ "backend": "webnn", "available": false }))
+    // Report native ORT accelerator availability instead of the old WebNN stub.
+    // The settings UI uses this to show CPU/GPU/NPU/DSP status.
+    let acc = inference::ort_engine::status()
+        .get("accelerators")
+        .cloned()
+        .unwrap_or_else(|| json!({ "nnapi": false, "coreml": false, "dsp": false }));
+    let available = inference::ort_engine::is_ready();
+    Ok(json!({
+        "backend": "rust-ort",
+        "available": available,
+        "accelerators": acc,
+    }))
 }
 
 #[tauri::command]
 async fn settings_get_current_hardware() -> Result<Value, String> {
-    Ok(json!({ "backend": "webnn", "device": null }))
+    // Report the current native ORT status so the settings UI can display
+    // active sessions and their EP labels.
+    let status = inference::ort_engine::status();
+    let acc = status.get("accelerators").cloned().unwrap_or_else(|| json!({}));
+    Ok(json!({
+        "backend": "rust-ort",
+        "device": null,
+        "available": status.get("available").cloned().unwrap_or(json!(false)),
+        "accelerators": acc,
+    }))
 }
 
 #[tauri::command]

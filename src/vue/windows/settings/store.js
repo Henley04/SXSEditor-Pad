@@ -205,6 +205,9 @@ export const useSettingsStore = defineStore('settings', {
     // ----- Inference hardware -----
     inference: {
       provider: 'ortnode',
+      // Device preference for native ORT: 'auto' | 'cpu' | 'gpu' | 'npu' | 'dsp'
+      // 'auto' lets the ORT runtime pick the best available EP.
+      devicePreference: 'auto',
       deviceMode: 'smart',
       preferredDeviceId: 'auto', // <select> value (string)
       modelDeviceMapping: {}, // { groupId: valueString }
@@ -212,8 +215,11 @@ export const useSettingsStore = defineStore('settings', {
       webnnState: 'checking', // 'checking' | 'available' | 'unavailable'
       npuState: 'checking',
       gpuState: 'checking',
+      dspState: 'checking',
       hardwareInfo: null,
       currentHardwareText: '',
+      // Native accelerator detection results from Rust backend
+      nativeAccelerators: null,
     },
 
     // ----- Preview inference params -----
@@ -328,6 +334,9 @@ export const useSettingsStore = defineStore('settings', {
     },
     gpuStatusText(state) {
       return _statusText(state.inference.gpuState, 'settings.webnnGpuAvailable', 'settings.webnnGpuNotAvailable');
+    },
+    dspStatusText(state) {
+      return _statusText(state.inference.dspState, 'settings.dspAvailable', 'settings.dspNotAvailable');
     },
     // Discrete GPUs (for "auto prefer discrete" label)
     discreteGpus(state) {
@@ -499,6 +508,7 @@ export const useSettingsStore = defineStore('settings', {
       return {
         deviceMode,
         inferenceProvider,
+        devicePreference: inf.devicePreference || 'auto',
         preferredDeviceId,
         preferredDeviceType,
         modelDeviceMapping,
@@ -572,6 +582,11 @@ export const useSettingsStore = defineStore('settings', {
 
       // Inference provider
       this.inference.provider = currentSetting.inferenceProvider === 'ortweb' ? 'ortweb' : 'ortnode';
+
+      // Device preference (cpu/gpu/npu/dsp/auto)
+      const dp = currentSetting.devicePreference;
+      this.inference.devicePreference =
+        (dp === 'cpu' || dp === 'gpu' || dp === 'npu' || dp === 'dsp' || dp === 'auto') ? dp : 'auto';
 
       // Device mode
       this.inference.deviceMode = currentSetting.deviceMode || 'smart';
@@ -673,10 +688,11 @@ export const useSettingsStore = defineStore('settings', {
     // ==================== Devices / hardware ====================
     async loadDevices() {
       const inf = this.inference;
-      // Loading state for WebNN/NPU/GPU indicators
+      // Loading state for WebNN/NPU/GPU/DSP indicators
       inf.webnnState = 'checking';
       inf.npuState = 'checking';
       inf.gpuState = 'checking';
+      inf.dspState = 'checking';
 
       try {
         // First load saved settings and apply to UI
@@ -685,14 +701,44 @@ export const useSettingsStore = defineStore('settings', {
         this.refreshModelOverview().catch(() => {});
         const provider = currentSetting?.inferenceProvider || 'ortnode';
 
+        // Detect native accelerators (NNAPI/CoreML/DSP) from Rust backend
+        // This replaces the old WebNN-only detection with real ORT EP info.
+        if (window.electronAPI?.nativeOrtDetectAccelerators) {
+          try {
+            const acc = await window.electronAPI.nativeOrtDetectAccelerators();
+            inf.nativeAccelerators = acc;
+            const hasNnapi = Boolean(acc?.nnapi);
+            const hasCoreml = Boolean(acc?.coreml);
+            const hasDsp = Boolean(acc?.dsp);
+            inf.webnnState = (hasNnapi || hasCoreml) ? 'available' : 'unavailable';
+            inf.npuState = (hasNnapi || hasCoreml) ? 'available' : 'unavailable';
+            inf.gpuState = (hasNnapi || hasCoreml) ? 'available' : 'unavailable';
+            inf.dspState = hasDsp ? 'available' : 'unavailable';
+          } catch (_) {
+            inf.webnnState = 'unavailable';
+            inf.npuState = 'unavailable';
+            inf.gpuState = 'unavailable';
+            inf.dspState = 'unavailable';
+          }
+        } else {
+          // Fallback: no native accelerator detection available
+          inf.webnnState = 'unavailable';
+          inf.npuState = 'unavailable';
+          inf.gpuState = 'unavailable';
+          inf.dspState = 'unavailable';
+        }
+
         // Then fetch device list (hardware detection can be slow)
         const allDevices = await window.electronAPI.getDMLDevices();
         const hasNpu = allDevices.some(d => d.deviceType === 'npu');
         const hasWebnnGpu = allDevices.some(d => d.deviceType === 'webnn-gpu');
 
-        inf.webnnState = (hasNpu || hasWebnnGpu) ? 'available' : 'unavailable';
-        inf.npuState = hasNpu ? 'available' : 'unavailable';
-        inf.gpuState = hasWebnnGpu ? 'available' : 'unavailable';
+        // Only override native detection if DML devices report NPU/GPU
+        if (hasNpu || hasWebnnGpu) {
+          if (hasNpu) inf.npuState = 'available';
+          if (hasWebnnGpu) inf.gpuState = 'available';
+          inf.webnnState = (hasNpu || hasWebnnGpu) ? 'available' : inf.webnnState;
+        }
 
         const devices = provider === 'ortweb'
           ? allDevices.filter(d => d.deviceType === 'npu' || d.deviceType === 'webnn-gpu')
@@ -730,6 +776,29 @@ export const useSettingsStore = defineStore('settings', {
       const deviceMode = currentSetting.deviceMode || inf.deviceMode;
       const provider = currentSetting.inferenceProvider || inf.provider;
       const providerLabel = provider === 'ortweb' ? 'ORTWEB / ' : 'ORTNODE / ';
+      const devicePref = inf.devicePreference || (currentSetting.devicePreference) || 'auto';
+
+      // On mobile (rust-ort backend), show the device preference prominently
+      // since that's the primary hardware control.
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(navigator.userAgent || '');
+      if (isMobile) {
+        const acc = inf.nativeAccelerators;
+        const parts = [providerLabel];
+        parts.push(`Device: ${devicePref.toUpperCase()}`);
+        if (acc) {
+          const epParts = [];
+          if (acc.nnapi) epParts.push('NNAPI');
+          if (acc.coreml) epParts.push('CoreML');
+          if (acc.dsp) epParts.push('DSP');
+          if (epParts.length > 0) parts.push(`(${epParts.join(', ')})`);
+        }
+        // Show active session count if available
+        if (hardwareInfo && hardwareInfo.available) {
+          parts.push('[Ready]');
+        }
+        inf.currentHardwareText = parts.join(' ');
+        return;
+      }
 
       if (hardwareInfo) {
         const gpuName = hardwareInfo.gpuDeviceName || t('settings.cpuOnly');
@@ -821,6 +890,17 @@ export const useSettingsStore = defineStore('settings', {
 
     setDeviceMode(mode) {
       this.inference.deviceMode = mode;
+      this.applySettings();
+      this.updateCurrentHardwareDisplay();
+    },
+
+    /**
+     * Set the native ORT device preference (cpu/gpu/npu/dsp/auto).
+     * This is saved and read back by the Rust backend's session options
+     * as `devicePreference` in NativeSessionOptions.
+     */
+    setDevicePreference(pref) {
+      this.inference.devicePreference = pref;
       this.applySettings();
       this.updateCurrentHardwareDisplay();
     },

@@ -1,26 +1,60 @@
 <!--
-  InferenceSection.vue — inference hardware settings. Mirrors
-  #section-inference markup: provider select, current-hardware info, device
-  mode radios (smart/manual/advanced), device select, WebNN/NPU/GPU status
-  bar, and the advanced per-model-group device mapping.
-  On mobile (Tauri/Android), only the provider select and current-hardware
-  info are relevant — device mode radios, device select, WebNN/NPU/GPU
-  status, and advanced per-model mapping are desktop-only (DirectML/GPU
-  hardware selection) and hidden via v-if="!isMobile".
+  InferenceSection.vue — inference hardware settings.
+
+  After the migration to Rust ORT as the sole inference backend, the settings
+  panel now exposes a unified device preference selector (CPU/GPU/NPU/DSP/Auto)
+  that works on both mobile and desktop. On mobile this is the primary hardware
+  control, mapping directly to the Rust ORT engine's execution provider selection.
+
+  Desktop-only sections (DirectML device enumeration, advanced per-model mapping)
+  remain hidden on mobile via v-if="!isMobile".
 -->
 <template>
   <div class="settings-section">
+    <!-- Inference backend info -->
     <div class="setting-group">
-      <label for="inferenceProvider">{{ $t('settings.inferenceProvider') }}</label>
-      <select id="inferenceProvider" :value="store.inference.provider" @change="store.setInferenceProvider($event.target.value)">
-        <option value="ortnode">{{ $t('settings.inferenceProviderOrtnode') }}</option>
-        <option value="ortweb">{{ $t('settings.inferenceProviderOrtweb') }}</option>
-      </select>
+      <label>{{ $t('settings.inferenceBackend') }}</label>
+      <div class="info-box">
+        <span>Rust ORT (ONNX Runtime Mobile)</span>
+      </div>
       <p class="hint">{{ isMobile
-        ? 'ONNX Runtime Mobile with NNAPI/CoreML acceleration. Select ortweb for CPU-only fallback.'
-        : store.inferenceProviderHintText }}</p>
+        ? 'Native ORT with NNAPI/CoreML acceleration. Select device preference below.'
+        : 'Native ORT engine loaded dynamically. Use device preference to select acceleration target.' }}</p>
     </div>
 
+    <!-- Device preference selector (works on all platforms) -->
+    <div class="setting-group">
+      <label for="devicePreference">{{ $t('settings.devicePreference') }}</label>
+      <select id="devicePreference"
+        :value="store.inference.devicePreference"
+        @change="store.setDevicePreference($event.target.value)">
+        <option value="auto">{{ $t('settings.devicePrefAuto') }}</option>
+        <option value="cpu">{{ $t('settings.devicePrefCpu') }}</option>
+        <option value="gpu" :disabled="store.inference.gpuState === 'unavailable'">{{ $t('settings.devicePrefGpu') }}</option>
+        <option value="npu" :disabled="store.inference.npuState === 'unavailable'">{{ $t('settings.devicePrefNpu') }}</option>
+        <option value="dsp" :disabled="store.inference.dspState === 'unavailable'">{{ $t('settings.devicePrefDsp') }}</option>
+      </select>
+      <p class="hint">{{ $t('settings.devicePreferenceHint') }}</p>
+    </div>
+
+    <!-- Hardware status bar (visible on all platforms) -->
+    <div class="setting-group">
+      <div class="webnn-status-bar">
+        <span class="webnn-status-label">NPU:</span>
+        <span class="webnn-status-value" :class="statusClass(store.inference.npuState)">{{ store.npuStatusText }}</span>
+        <span class="webnn-status-separator">|</span>
+        <span class="webnn-status-label">GPU:</span>
+        <span class="webnn-status-value" :class="statusClass(store.inference.gpuState)">{{ store.gpuStatusText }}</span>
+        <span class="webnn-status-separator">|</span>
+        <span class="webnn-status-label">DSP:</span>
+        <span class="webnn-status-value" :class="statusClass(store.inference.dspState)">{{ store.dspStatusText }}</span>
+        <span class="webnn-status-separator">|</span>
+        <span class="webnn-status-label">CPU:</span>
+        <span class="webnn-status-value status-available">{{ $t('settings.cpuAvailable') }}</span>
+      </div>
+    </div>
+
+    <!-- Current hardware info (visible on all platforms) -->
     <div class="setting-group hardware-info">
       <label>{{ $t('settings.currentHardware') }}</label>
       <div class="info-box">
@@ -64,20 +98,6 @@
         <option v-for="opt in store.deviceOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
       </select>
       <p class="hint">{{ $t('settings.inferenceHardwareHint') }}</p>
-    </div>
-
-    <!-- Desktop-only: WebNN/NPU/GPU status bar -->
-    <div class="setting-group" v-if="!isMobile">
-      <div class="webnn-status-bar">
-        <span class="webnn-status-label">WebNN:</span>
-        <span class="webnn-status-value" :class="statusClass(store.inference.webnnState)">{{ store.webnnStatusText }}</span>
-        <span class="webnn-status-separator">|</span>
-        <span class="webnn-status-label">NPU:</span>
-        <span class="webnn-status-value" :class="statusClass(store.inference.npuState)">{{ store.npuStatusText }}</span>
-        <span class="webnn-status-separator">|</span>
-        <span class="webnn-status-label">GPU:</span>
-        <span class="webnn-status-value" :class="statusClass(store.inference.gpuState)">{{ store.gpuStatusText }}</span>
-      </div>
     </div>
 
     <!-- Desktop-only: advanced per-model-group device mapping -->

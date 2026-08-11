@@ -1,6 +1,7 @@
 function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes == null) return '0 B';
   if (bytes < 0) return '-' + formatBytes(-bytes);
-  if (bytes === 0 || bytes == null) return '0 B';
+  if (bytes === 0) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.min(Math.floor(Math.log2(bytes) / Math.log2(1024)), units.length - 1);
   const val = bytes / Math.pow(1024, i);
