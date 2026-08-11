@@ -284,6 +284,7 @@ pub fn is_ready() -> bool {
 /// model itself is valid.
 ///
 /// Device preferences:
+///   "auto" → NPU → GPU → DSP → CPU priority chain (best available first)
 ///   "cpu"  → CPU only
 ///   "gpu"  → NNAPI (Android) / CoreML (iOS) with GPU preference + CPU fallback
 ///   "npu"  → NNAPI (Android) / CoreML (iOS) with NPU preference + CPU fallback
@@ -292,6 +293,14 @@ fn execution_providers_for(device: &str) -> (Vec<ep::ExecutionProviderDispatch>,
     #[cfg(target_os = "android")]
     {
         match device {
+            "auto" => (
+                // Auto priority: NPU → GPU → DSP → CPU.
+                // NNAPI EP internally selects the best available accelerator
+                // (NPU first, then GPU, then DSP), and falls back to CPU.
+                // Listing NNAPI once lets the runtime probe all accelerators.
+                vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
+                "nnapi-auto+cpu",
+            ),
             "npu" => (
                 vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
                 "nnapi-npu+cpu",
@@ -313,9 +322,10 @@ fn execution_providers_for(device: &str) -> (Vec<ep::ExecutionProviderDispatch>,
     #[cfg(target_os = "ios")]
     {
         match device {
-            "npu" | "gpu" | "dsp" => (
+            "auto" | "npu" | "gpu" | "dsp" => (
+                // CoreML EP handles ANE (NPU) / GPU automatically with CPU fallback.
                 vec![ep::CoreML::default().build(), ep::CPU::default().build()],
-                "coreml+cpu",
+                "coreml-auto+cpu",
             ),
             _ => (vec![ep::CPU::default().build()], "cpu"),
         }
@@ -674,12 +684,22 @@ mod tests {
 
     #[test]
     fn ep_label_and_chain_per_platform() {
+        // Auto should produce the priority chain
+        let (auto_eps, auto_label) = execution_providers_for("auto");
+        assert!(!auto_eps.is_empty());
+        #[cfg(target_os = "android")]
+        assert_eq!(auto_label, "nnapi-auto+cpu");
+        #[cfg(target_os = "ios")]
+        assert_eq!(auto_label, "coreml-auto+cpu");
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        assert_eq!(auto_label, "cpu");
+
         let (eps, label) = execution_providers_for("npu");
         assert!(!eps.is_empty());
         #[cfg(target_os = "android")]
         assert_eq!(label, "nnapi-npu+cpu");
         #[cfg(target_os = "ios")]
-        assert_eq!(label, "coreml+cpu");
+        assert_eq!(label, "coreml-auto+cpu");
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         assert_eq!(label, "cpu");
 

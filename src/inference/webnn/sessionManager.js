@@ -127,8 +127,9 @@ export async function loadModel(modelId, modelPath, options = { deviceType: 'npu
         } catch (_) { /* use default deviceType */ }
     }
 
-    // 回退链：WebNN NPU → WebNN GPU → WASM
-    // On native backend with user devicePreference, respect the user's choice.
+    // 回退链：根据用户设备偏好构建 EP 链
+    // Auto 优先级：NPU → GPU → DSP → CPU
+    // 用户显式选择时，以选择为准（仍然附带 CPU 回退）
     const epChain = [];
     if (userDevicePref && userDevicePref !== 'auto') {
         // User explicitly selected a device — use it directly
@@ -141,11 +142,25 @@ export async function loadModel(modelId, modelPath, options = { deviceType: 'npu
             epChain.push({ name: 'webnn', deviceType: 'gpu' });
         }
         // 'cpu' → only wasm in chain
-    } else if (deviceType === 'npu') {
-        epChain.push({ name: 'webnn', deviceType: 'npu' });
-        epChain.push({ name: 'webnn', deviceType: 'gpu' });
-    } else if (deviceType === 'gpu') {
-        epChain.push({ name: 'webnn', deviceType: 'gpu' });
+    } else {
+        // Auto mode: NPU → GPU → DSP → CPU priority chain.
+        // On native backend, the Rust ORT engine's execution_providers_for("auto")
+        // handles the actual EP selection internally (NNAPI picks best device).
+        // We still list all EPs here for the ort-web fallback path.
+        if (useNative) {
+            // For native backend, a single 'npu' EP entry is enough — the Rust
+            // side's execution_providers_for("auto") will use the NNAPI/CoreML
+            // auto-selection chain. The devicePreference passed via sessionOptions
+            // will be 'auto' (from epToDevicePreference reading this chain).
+            epChain.push({ name: 'webnn', deviceType: 'npu' });
+            epChain.push({ name: 'webnn', deviceType: 'gpu' });
+            epChain.push({ name: 'webnn', deviceType: 'dsp' });
+        } else if (deviceType === 'npu') {
+            epChain.push({ name: 'webnn', deviceType: 'npu' });
+            epChain.push({ name: 'webnn', deviceType: 'gpu' });
+        } else if (deviceType === 'gpu') {
+            epChain.push({ name: 'webnn', deviceType: 'gpu' });
+        }
     }
     epChain.push('wasm'); // 最终回退到 WASM (CPU)
 

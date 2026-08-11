@@ -153,6 +153,10 @@ const tauriBridge = {
   getDirName: (filePath) => invoke('get_dir_name', { filePath }),
   showItemInFolder: (filePath) => invoke('show_item_in_folder', { path: filePath }),
 
+  // Binary file I/O (for onboarding benchmark model persistence)
+  writeBinaryFile: (path, data) => invoke('write_binary_file', { path, data }),
+  deleteFile: (path) => invoke('delete_file', { path }),
+
   // Settings / hardware info
   getDMLDevices: () => invoke('settings_get_dml_devices'),
   getHardwareStatus: () => invoke('settings_get_hardware_status'),

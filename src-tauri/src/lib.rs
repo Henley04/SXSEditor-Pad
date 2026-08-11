@@ -52,6 +52,26 @@ async fn read_file_buffer(path: String) -> Result<Vec<u8>, String> {
     std::fs::read(&path).map_err(|e| e.to_string())
 }
 
+/// Write binary data (Vec<u8>) to a file. Used by the onboarding benchmark
+/// to write the ONNX model to disk — the Tauri fs plugin's writeFile requires
+/// capabilities config that may not be set up, so we expose this directly.
+#[tauri::command]
+async fn write_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
+    // Create parent directories if they don't exist
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+    std::fs::write(&path, &data).map_err(|e| e.to_string())
+}
+
+/// Delete a file. Used to clean up the temporary benchmark model.
+#[tauri::command]
+async fn delete_file(path: String) -> Result<(), String> {
+    std::fs::remove_file(&path).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn file_exists(path: String) -> Result<bool, String> {
     Ok(std::path::Path::new(&path).exists())
@@ -1178,6 +1198,8 @@ pub fn run() {
             save_file,
             read_file,
             read_file_buffer,
+            write_binary_file,
+            delete_file,
             file_exists,
             resolve_path,
             get_dir_name,

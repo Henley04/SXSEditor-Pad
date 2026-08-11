@@ -54,6 +54,7 @@
               </div>
               <div v-if="r.available" class="bench-metrics">
                 <span class="bench-time">{{ r.avgMs.toFixed(2) }} ms</span>
+                <span class="bench-gops">{{ formatGops(r.gops) }}</span>
                 <span class="bench-speed" :class="r.speedClass">{{ r.speedLabel }}</span>
               </div>
             </div>
@@ -110,21 +111,22 @@ onMounted(() => {
  * Write the base64 benchmark model to a temporary file on disk.
  * The native ORT backend requires a file path (__modelPath) to create
  * sessions — it cannot create sessions from in-memory byte arrays.
+ * Uses the Rust write_binary_file command (not the fs plugin, which
+ * requires capabilities config that may not be set up).
  * Returns the file path or null if writing failed.
  */
 async function writeBenchmarkModelToDisk(modelBytes) {
   try {
-    // Use the model download directory as a writable location
     const modelDir = await window.electronAPI.modelDownloadGetDir();
-    if (!modelDir) return null;
-    // Use Tauri's fs plugin to write binary data
-    const { writeFile, mkdir } = await import('@tauri-apps/plugin-fs');
+    if (!modelDir) {
+      console.warn('[benchmark] modelDownloadGetDir returned empty');
+      return null;
+    }
     const sep = modelDir.includes('\\') ? '\\' : '/';
     const benchPath = modelDir + sep + '.benchmark_model.onnx';
-    try {
-      await mkdir(modelDir, { recursive: true });
-    } catch (_) { /* dir may already exist */ }
-    await writeFile(benchPath, modelBytes);
+    // Use the Rust command directly — bypasses fs plugin capability issues
+    await window.electronAPI.writeBinaryFile(benchPath, Array.from(modelBytes));
+    console.log('[benchmark] Model written to:', benchPath);
     return benchPath;
   } catch (err) {
     console.warn('[benchmark] Failed to write model to disk:', err);
@@ -138,8 +140,7 @@ async function writeBenchmarkModelToDisk(modelBytes) {
 async function cleanupBenchmarkModel(filePath) {
   if (!filePath) return;
   try {
-    const { remove } = await import('@tauri-apps/plugin-fs');
-    await remove(filePath);
+    await window.electronAPI.deleteFile(filePath);
   } catch (_) { /* non-fatal */ }
 }
 
@@ -197,7 +198,11 @@ async function runBenchmark() {
   const WARMUP_ITERS = 10;
   const BENCH_ITERS = 50;
 
-  // Detect available native accelerators
+  // Detect available native accelerators for display purposes.
+  // We do NOT skip benchmarks based on this — we attempt each EP and let
+  // failures mark it as "unsupported". The accelerator detection from
+  // platform_accelerators() only tells us if the EP is compiled in, not
+  // if the actual hardware is present.
   let accelerators = null;
   if (native) {
     accelerators = await detectNativeAccelerators();
@@ -226,11 +231,14 @@ async function runBenchmark() {
     }
   }
 
-  // --- CPU benchmark ---
-  try {
-    benchStatus.value = '正在测试 CPU 算力...';
-    const session = await createSession('cpu');
-
+  /**
+   * Run a benchmark for one device preference.
+   * Returns { available: true, avgMs, gops } on success,
+   * or { available: false } on failure.
+   */
+  async function benchOne(devicePref) {
+    const session = await createSession(devicePref);
+    // Warmup
     for (let i = 0; i < WARMUP_ITERS; i++) {
       await session.run(inputTensor);
     }
@@ -240,151 +248,108 @@ async function runBenchmark() {
     }
     const t1 = performance.now();
     const avgMs = (t1 - t0) / BENCH_ITERS;
+    session.release();
+    // Estimate GOPS: the benchmark model is a MatMul [1,64,64] x [64,64],
+    // = 2 * 64 * 64 * 64 = 524288 FLOPs per inference.
+    // GOPS = FLOPs / (avgMs * 1e-3) / 1e9
+    const FLOPS_PER_INFER = 2 * 64 * 64 * 64;
+    const gops = (FLOPS_PER_INFER / (avgMs * 1e-3)) / 1e9;
+    return { available: true, avgMs, gops };
+  }
 
+  // --- CPU benchmark ---
+  try {
+    benchStatus.value = '正在测试 CPU 算力...';
+    const r = await benchOne('cpu');
     results.push({
       ep: 'cpu',
       label: 'CPU',
       icon: '\u{2699}\u{FE0F}',
       available: true,
-      avgMs,
+      avgMs: r.avgMs,
+      gops: r.gops,
       device: getCPUName(),
-      speedLabel: getSpeedLabel(avgMs),
-      speedClass: getSpeedClass(avgMs),
+      speedLabel: getSpeedLabel(r.avgMs),
+      speedClass: getSpeedClass(r.avgMs),
     });
-    session.release();
   } catch (err) {
     console.warn('[benchmark] CPU test failed:', err);
     results.push({
       ep: 'cpu', label: 'CPU', icon: '\u{2699}\u{FE0F}',
-      available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
+      available: false, avgMs: 0, gops: 0, device: '', speedLabel: '', speedClass: '',
     });
   }
 
   // --- NPU benchmark ---
-  // On native backend, skip individual EP benchmarks if the accelerator is
-  // not available — the native ORT engine handles EP fallback internally.
-  const npuAvailable = native ? (accelerators?.npu ?? false) : true;
-  if (npuAvailable) {
-    try {
-      benchStatus.value = '正在测试 NPU 算力...';
-      const session = await createSession('npu');
-
-      for (let i = 0; i < WARMUP_ITERS; i++) {
-        await session.run(inputTensor);
-      }
-      const t0 = performance.now();
-      for (let i = 0; i < BENCH_ITERS; i++) {
-        await session.run(inputTensor);
-      }
-      const t1 = performance.now();
-      const avgMs = (t1 - t0) / BENCH_ITERS;
-
-      results.push({
-        ep: 'npu',
-        label: 'NPU',
-        icon: '\u{1F9EE}',
-        available: true,
-        avgMs,
-        device: native ? 'NPU (NNAPI/CoreML)' : 'NPU (WebNN)',
-        speedLabel: getSpeedLabel(avgMs),
-        speedClass: getSpeedClass(avgMs),
-      });
-      session.release();
-    } catch (err) {
-      console.info('[benchmark] NPU not available:', err.message);
-      results.push({
-        ep: 'npu', label: 'NPU', icon: '\u{1F9EE}',
-        available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
-      });
-    }
-  } else {
+  // We attempt the benchmark regardless of accelerator detection, because
+  // platform_accelerators() only reports compile-time EP availability, not
+  // runtime hardware presence. If session creation fails, the EP is marked
+  // unavailable.
+  try {
+    benchStatus.value = '正在测试 NPU 算力...';
+    const r = await benchOne('npu');
+    results.push({
+      ep: 'npu',
+      label: 'NPU',
+      icon: '\u{1F9EE}',
+      available: true,
+      avgMs: r.avgMs,
+      gops: r.gops,
+      device: native ? 'NPU (NNAPI/CoreML)' : 'NPU (WebNN)',
+      speedLabel: getSpeedLabel(r.avgMs),
+      speedClass: getSpeedClass(r.avgMs),
+    });
+  } catch (err) {
+    console.info('[benchmark] NPU not available:', err.message);
     results.push({
       ep: 'npu', label: 'NPU', icon: '\u{1F9EE}',
-      available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
+      available: false, avgMs: 0, gops: 0, device: '', speedLabel: '', speedClass: '',
     });
   }
 
   // --- GPU benchmark ---
-  const gpuAvailable = native ? (accelerators?.gpu ?? false) : true;
-  if (gpuAvailable) {
-    try {
-      benchStatus.value = '正在测试 GPU 算力...';
-      const session = await createSession('gpu');
-
-      for (let i = 0; i < WARMUP_ITERS; i++) {
-        await session.run(inputTensor);
-      }
-      const t0 = performance.now();
-      for (let i = 0; i < BENCH_ITERS; i++) {
-        await session.run(inputTensor);
-      }
-      const t1 = performance.now();
-      const avgMs = (t1 - t0) / BENCH_ITERS;
-
-      results.push({
-        ep: 'gpu',
-        label: 'GPU',
-        icon: '\u{1F3AE}',
-        available: true,
-        avgMs,
-        device: getGPUName(),
-        speedLabel: getSpeedLabel(avgMs),
-        speedClass: getSpeedClass(avgMs),
-      });
-      session.release();
-    } catch (err) {
-      console.info('[benchmark] GPU not available:', err.message);
-      results.push({
-        ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}',
-        available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
-      });
-    }
-  } else {
+  try {
+    benchStatus.value = '正在测试 GPU 算力...';
+    const r = await benchOne('gpu');
+    results.push({
+      ep: 'gpu',
+      label: 'GPU',
+      icon: '\u{1F3AE}',
+      available: true,
+      avgMs: r.avgMs,
+      gops: r.gops,
+      device: getGPUName(),
+      speedLabel: getSpeedLabel(r.avgMs),
+      speedClass: getSpeedClass(r.avgMs),
+    });
+  } catch (err) {
+    console.info('[benchmark] GPU not available:', err.message);
     results.push({
       ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}',
-      available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
+      available: false, avgMs: 0, gops: 0, device: '', speedLabel: '', speedClass: '',
     });
   }
 
   // --- DSP benchmark (Android only via NNAPI) ---
-  const dspAvailable = native ? (accelerators?.dsp ?? false) : false;
-  if (dspAvailable) {
-    try {
-      benchStatus.value = '正在测试 DSP 算力...';
-      const session = await createSession('dsp');
-
-      for (let i = 0; i < WARMUP_ITERS; i++) {
-        await session.run(inputTensor);
-      }
-      const t0 = performance.now();
-      for (let i = 0; i < BENCH_ITERS; i++) {
-        await session.run(inputTensor);
-      }
-      const t1 = performance.now();
-      const avgMs = (t1 - t0) / BENCH_ITERS;
-
-      results.push({
-        ep: 'dsp',
-        label: 'DSP',
-        icon: '\u{1F5A5}',
-        available: true,
-        avgMs,
-        device: 'DSP (Hexagon/QDSP)',
-        speedLabel: getSpeedLabel(avgMs),
-        speedClass: getSpeedClass(avgMs),
-      });
-      session.release();
-    } catch (err) {
-      console.info('[benchmark] DSP not available:', err.message);
-      results.push({
-        ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}',
-        available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
-      });
-    }
-  } else {
+  try {
+    benchStatus.value = '正在测试 DSP 算力...';
+    const r = await benchOne('dsp');
+    results.push({
+      ep: 'dsp',
+      label: 'DSP',
+      icon: '\u{1F5A5}',
+      available: true,
+      avgMs: r.avgMs,
+      gops: r.gops,
+      device: 'DSP (Hexagon/QDSP)',
+      speedLabel: getSpeedLabel(r.avgMs),
+      speedClass: getSpeedClass(r.avgMs),
+    });
+  } catch (err) {
+    console.info('[benchmark] DSP not available:', err.message);
     results.push({
       ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}',
-      available: false, avgMs: 0, device: '', speedLabel: '', speedClass: '',
+      available: false, avgMs: 0, gops: 0, device: '', speedLabel: '', speedClass: '',
     });
   }
 
@@ -433,6 +398,12 @@ function getSpeedClass(ms) {
   if (ms < 10) return 'speed-mid';
   if (ms < 50) return 'speed-slow';
   return 'speed-slow';
+}
+
+function formatGops(gops) {
+  if (!gops || gops <= 0) return '';
+  if (gops >= 1) return gops.toFixed(2) + ' GOPS';
+  return (gops * 1000).toFixed(1) + ' MOPS';
 }
 
 function complete() {
@@ -622,6 +593,12 @@ watch(step, (newStep) => {
   font-size: 13px;
   font-weight: 600;
   color: var(--fg-primary, #e0e0f0);
+}
+
+.bench-gops {
+  font-size: 11px;
+  color: var(--accent, #5b8def);
+  font-weight: 500;
 }
 
 .bench-speed {
