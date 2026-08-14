@@ -72,6 +72,14 @@ async fn delete_file(path: String) -> Result<(), String> {
     std::fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
+/// Return the OS temp directory. Used by the onboarding benchmark so the
+/// temporary benchmark model is never written into the user's model download
+/// directory.
+#[tauri::command]
+async fn get_temp_dir() -> Result<String, String> {
+    Ok(std::env::temp_dir().to_string_lossy().to_string())
+}
+
 #[tauri::command]
 async fn file_exists(path: String) -> Result<bool, String> {
     Ok(std::path::Path::new(&path).exists())
@@ -1200,6 +1208,7 @@ pub fn run() {
             read_file_buffer,
             write_binary_file,
             delete_file,
+            get_temp_dir,
             file_exists,
             resolve_path,
             get_dir_name,
