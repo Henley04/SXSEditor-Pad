@@ -55,8 +55,14 @@ describe('deviceNames', () => {
     });
 
     it('falls back to a plain GPU token, never "WebGL GPU"', () => {
+      // 暂时隐藏 document，验证回退分支；after 中恢复，避免污染后续测试。
+      const savedDocument = global.document;
       global.document = undefined;
-      expect(mod.getGPUName({})).to.equal('GPU');
+      try {
+        expect(mod.getGPUName({})).to.equal('GPU');
+      } finally {
+        global.document = savedDocument;
+      }
     });
   });
 
