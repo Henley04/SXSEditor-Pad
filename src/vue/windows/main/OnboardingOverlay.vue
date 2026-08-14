@@ -100,6 +100,10 @@ const skipLabel = '跳过引导';
 const benchLoading = ref(true);
 const benchStatus = ref('正在加载 ONNX Runtime...');
 const benchResults = ref([]);
+// Tracks whether the benchmark has been kicked off at least once. Used by the
+// step watcher so re-entering step 2 (back/forward) never re-runs the
+// benchmark, while still triggering it on the very first visit.
+const benchStarted = ref(false);
 
 onMounted(() => {
   const done = localStorage.getItem('sxseditor.onboarding.completed');
@@ -118,13 +122,15 @@ onMounted(() => {
  */
 async function writeBenchmarkModelToDisk(modelBytes) {
   try {
-    const modelDir = await window.electronAPI.modelDownloadGetDir();
-    if (!modelDir) {
-      console.warn('[benchmark] modelDownloadGetDir returned empty');
+    // Write the temp model into the OS temp dir so it never pollutes the
+    // user's model download directory.
+    const tempDir = await window.electronAPI.getTempDir();
+    if (!tempDir) {
+      console.warn('[benchmark] getTempDir returned empty');
       return null;
     }
-    const sep = modelDir.includes('\\') ? '\\' : '/';
-    const benchPath = modelDir + sep + '.benchmark_model.onnx';
+    const sep = tempDir.includes('\\') ? '\\' : '/';
+    const benchPath = tempDir + sep + 'sxs-onboarding-benchmark.onnx';
     // Use the Rust command directly — bypasses fs plugin capability issues
     await window.electronAPI.writeBinaryFile(benchPath, Array.from(modelBytes));
     console.log('[benchmark] Model written to:', benchPath);
@@ -149,6 +155,7 @@ async function runBenchmark() {
   benchLoading.value = true;
   benchStatus.value = '正在加载 ONNX Runtime...';
   benchResults.value = [];
+  benchStarted.value = true;
 
   const results = [];
 
@@ -282,84 +289,106 @@ async function runBenchmark() {
   }
 
   // --- NPU benchmark ---
-  // If the native backend reports NPU as available (NNAPI/CoreML compiled in),
-  // attempt the benchmark. If session creation fails at runtime (no NPU
-  // hardware), fall back to the accelerator detection result so the UI
-  // is consistent with the settings page.
+  // On the native backend the Rust engine always folds a CPU fallback into
+  // the session (execution_providers_for), so a session that "succeeds" does
+  // NOT prove the NPU exists — it just proves the model loaded on CPU. Gating
+  // on accelerator detection prevents a phone without an NPU from being shown
+  // an "available" NPU row with CPU-level numbers.
   const npuDetected = accelerators && accelerators.npu;
-  try {
-    benchStatus.value = '正在测试 NPU 算力...';
-    const r = await benchOne('npu');
-    results.push({
-      ep: 'npu',
-      label: 'NPU',
-      icon: '\u{1F9EE}',
-      available: true,
-      avgMs: r.avgMs,
-      tops: r.tops,
-      device: native ? 'NPU (NNAPI/CoreML)' : 'NPU (WebNN)',
-      speedLabel: getSpeedLabel(r.avgMs),
-      speedClass: getSpeedClass(r.avgMs),
-    });
-  } catch (err) {
-    console.info('[benchmark] NPU not available:', err.message);
-    // If accelerator detection says available but benchmark failed, still
-    // show it as available with no performance data (consistent with settings).
+  if (native && !npuDetected) {
     results.push({
       ep: 'npu', label: 'NPU', icon: '\u{1F9EE}',
-      available: npuDetected || false, avgMs: 0, tops: 0,
-      device: npuDetected ? 'NPU (NNAPI/CoreML)' : '', speedLabel: '', speedClass: '',
+      available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
     });
+  } else {
+    try {
+      benchStatus.value = '正在测试 NPU 算力...';
+      const r = await benchOne('npu');
+      results.push({
+        ep: 'npu',
+        label: 'NPU',
+        icon: '\u{1F9EE}',
+        available: true,
+        avgMs: r.avgMs,
+        tops: r.tops,
+        device: native ? 'NPU (NNAPI/CoreML)' : 'NPU (WebNN)',
+        speedLabel: getSpeedLabel(r.avgMs),
+        speedClass: getSpeedClass(r.avgMs),
+      });
+    } catch (err) {
+      console.info('[benchmark] NPU not available:', err.message);
+      // If accelerator detection says available but benchmark failed, still
+      // show it as available with no performance data (consistent with settings).
+      results.push({
+        ep: 'npu', label: 'NPU', icon: '\u{1F9EE}',
+        available: npuDetected || false, avgMs: 0, tops: 0,
+        device: npuDetected ? 'NPU (NNAPI/CoreML)' : '', speedLabel: '', speedClass: '',
+      });
+    }
   }
 
   // --- GPU benchmark ---
   const gpuDetected = accelerators && accelerators.gpu;
-  try {
-    benchStatus.value = '正在测试 GPU 算力...';
-    const r = await benchOne('gpu');
-    results.push({
-      ep: 'gpu',
-      label: 'GPU',
-      icon: '\u{1F3AE}',
-      available: true,
-      avgMs: r.avgMs,
-      tops: r.tops,
-      device: getGPUName(),
-      speedLabel: getSpeedLabel(r.avgMs),
-      speedClass: getSpeedClass(r.avgMs),
-    });
-  } catch (err) {
-    console.info('[benchmark] GPU not available:', err.message);
+  if (native && !gpuDetected) {
     results.push({
       ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}',
-      available: gpuDetected || false, avgMs: 0, tops: 0,
-      device: gpuDetected ? 'GPU (NNAPI/CoreML)' : '', speedLabel: '', speedClass: '',
+      available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
     });
+  } else {
+    try {
+      benchStatus.value = '正在测试 GPU 算力...';
+      const r = await benchOne('gpu');
+      results.push({
+        ep: 'gpu',
+        label: 'GPU',
+        icon: '\u{1F3AE}',
+        available: true,
+        avgMs: r.avgMs,
+        tops: r.tops,
+        device: native ? 'GPU (NNAPI/CoreML)' : getGPUName(),
+        speedLabel: getSpeedLabel(r.avgMs),
+        speedClass: getSpeedClass(r.avgMs),
+      });
+    } catch (err) {
+      console.info('[benchmark] GPU not available:', err.message);
+      results.push({
+        ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}',
+        available: gpuDetected || false, avgMs: 0, tops: 0,
+        device: gpuDetected ? 'GPU (NNAPI/CoreML)' : '', speedLabel: '', speedClass: '',
+      });
+    }
   }
 
   // --- DSP benchmark (Android only via NNAPI) ---
   const dspDetected = accelerators && accelerators.dsp;
-  try {
-    benchStatus.value = '正在测试 DSP 算力...';
-    const r = await benchOne('dsp');
-    results.push({
-      ep: 'dsp',
-      label: 'DSP',
-      icon: '\u{1F5A5}',
-      available: true,
-      avgMs: r.avgMs,
-      tops: r.tops,
-      device: 'DSP (Hexagon/QDSP)',
-      speedLabel: getSpeedLabel(r.avgMs),
-      speedClass: getSpeedClass(r.avgMs),
-    });
-  } catch (err) {
-    console.info('[benchmark] DSP not available:', err.message);
+  if (native && !dspDetected) {
     results.push({
       ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}',
-      available: dspDetected || false, avgMs: 0, tops: 0,
-      device: dspDetected ? 'DSP (Hexagon/QDSP)' : '', speedLabel: '', speedClass: '',
+      available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
     });
+  } else {
+    try {
+      benchStatus.value = '正在测试 DSP 算力...';
+      const r = await benchOne('dsp');
+      results.push({
+        ep: 'dsp',
+        label: 'DSP',
+        icon: '\u{1F5A5}',
+        available: true,
+        avgMs: r.avgMs,
+        tops: r.tops,
+        device: 'DSP (Hexagon/QDSP)',
+        speedLabel: getSpeedLabel(r.avgMs),
+        speedClass: getSpeedClass(r.avgMs),
+      });
+    } catch (err) {
+      console.info('[benchmark] DSP not available:', err.message);
+      results.push({
+        ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}',
+        available: dspDetected || false, avgMs: 0, tops: 0,
+        device: dspDetected ? 'DSP (Hexagon/QDSP)' : '', speedLabel: '', speedClass: '',
+      });
+    }
   }
 
   benchResults.value = results;
@@ -373,10 +402,17 @@ async function runBenchmark() {
 
 function getCPUName() {
   const ua = navigator.userAgent || '';
-  // Try to extract CPU info from UserAgent
-  const match = ua.match(/(?:Intel|AMD|Apple|Snapdragon|Exynos|Kirin|Dimensity|Tensor)[^;) ]*/i);
-  if (match) return match[0];
-  // Fallback: hardwareConcurrency
+  // UA CPU segments look like:
+  //   "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz"
+  //   "AMD Ryzen 7 5800H with Radeon Graphics"
+  //   "Apple M1 Pro"
+  //   "Qualcomm SM8550-AB Snapdragon 8 Gen 3"
+  const m = ua.match(/(?:Intel|AMD|Apple|Snapdragon|Exynos|Kirin|Dimensity|MediaTek|Tensor)[^;]*/i);
+  if (m) {
+    // Strip the trailing "CPU @ 2.60GHz" clock suffix for a cleaner label.
+    return m[0].replace(/\s*(?:CPU\s*)?@\s*[\d.]+\s*GHz/i, '').trim();
+  }
+  // Fallback: report core count
   return `${navigator.hardwareConcurrency || '?'} 核 CPU`;
 }
 
@@ -390,7 +426,9 @@ function getGPUName() {
       if (renderer) return renderer;
     }
   }
-  return 'WebGL GPU';
+  // WebGL is often unavailable in a mobile WebView; fall back to the
+  // execution-provider label instead of a fabricated "WebGL GPU" name.
+  return 'GPU (WebNN)';
 }
 
 function getSpeedLabel(ms) {
@@ -428,7 +466,7 @@ async function goToModelDownload() {
 
 // Watch for step changes to trigger benchmark
 watch(step, (newStep) => {
-  if (newStep === 2 && benchLoading.value && benchResults.value.length === 0) {
+  if (newStep === 2 && !benchStarted.value) {
     runBenchmark();
   }
 });

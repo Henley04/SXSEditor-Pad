@@ -156,6 +156,7 @@ const tauriBridge = {
   // Binary file I/O (for onboarding benchmark model persistence)
   writeBinaryFile: (path, data) => invoke('write_binary_file', { path, data }),
   deleteFile: (path) => invoke('delete_file', { path }),
+  getTempDir: () => invoke('get_temp_dir'),
 
   // Settings / hardware info
   getDMLDevices: () => invoke('settings_get_dml_devices'),
