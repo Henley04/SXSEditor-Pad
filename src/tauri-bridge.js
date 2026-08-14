@@ -227,6 +227,7 @@ const tauriBridge = {
   // The live SVS inference path: tensors are packed into binary frames by
   // src/inference/native/tensorCodec.js and executed by the Rust ORT engine.
   getPlatformInfo: () => invoke('get_platform_info'),
+  getDeviceInfo: () => invoke('get_device_info'),
   nativeOrtInit: (libPath) => invoke('native_ort_init', { libPath: libPath || null }),
   nativeOrtDetectAccelerators: () => invoke('native_ort_detect_accelerators'),
   nativeOrtLoadModel: (modelId, modelPath, options) => invoke('native_ort_load_model', { modelId, modelPath, options: options || null }),

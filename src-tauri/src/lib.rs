@@ -146,6 +146,110 @@ async fn get_platform_info() -> Result<Value, String> {
     }))
 }
 
+/// Run a short command and return its trimmed stdout, or None on any failure.
+fn run_cmd(prog: &str, args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new(prog).args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Best-effort CPU / SoC name. Returns None when the platform has no cheap,
+/// dependency-free source; the renderer then falls back to the User-Agent.
+fn device_cpu_name() -> Option<String> {
+    #[cfg(target_os = "android")]
+    {
+        // SoC model is the most useful label (e.g. "Snapdragon 8 Gen 3").
+        return run_cmd("/system/bin/getprop", &["ro.soc.model"])
+            .or_else(|| run_cmd("/system/bin/getprop", &["ro.soc.manufacturer"]))
+            .or_else(|| run_cmd("/system/bin/getprop", &["ro.product.board"]))
+            .or_else(|| run_cmd("/system/bin/getprop", &["ro.product.model"]));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(text) = std::fs::read_to_string("/proc/cpuinfo") {
+            for line in text.lines() {
+                if let Some(rest) = line.strip_prefix("model name") {
+                    let v = rest.trim_start_matches(':').trim();
+                    if !v.is_empty() {
+                        return Some(v.to_string());
+                    }
+                }
+            }
+        }
+        return None;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        return run_cmd("/usr/sbin/sysctl", &["-n", "machdep.cpu.brand_string"]);
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return std::env::var("PROCESSOR_IDENTIFIER").ok();
+    }
+    #[cfg(target_os = "ios")]
+    {
+        // No cheap name source without FFI; the renderer falls back to the UA.
+        return None;
+    }
+    #[cfg(not(any(
+        target_os = "android",
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "ios"
+    )))]
+    {
+        None
+    }
+}
+
+/// Best-effort GPU name. On mobile the accelerator identity (NNAPI/CoreML) is
+/// more useful than a fabricated name, so return None and let the renderer
+/// label the row via the EP.
+fn device_gpu_name() -> Option<String> {
+    #[cfg(target_os = "android")]
+    {
+        // ro.hardware names the vendor GPU/SoC cluster (e.g. "qcom").
+        return run_cmd("/system/bin/getprop", &["ro.hardware"]);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(text) = std::fs::read_to_string("/proc/fb") {
+            return text.lines().next().map(|s| s.to_string());
+        }
+        return None;
+    }
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
+    {
+        None
+    }
+}
+
+/// Return human-readable device identity for the onboarding hardware check.
+/// Complements `get_platform_info` with real CPU/SoC names and the native ORT
+/// accelerator set, so the UI never has to fall back to WebGL / UA guesses.
+#[tauri::command]
+async fn get_device_info() -> Result<Value, String> {
+    Ok(json!({
+        "platform": std::env::consts::OS,
+        "arch": std::env::consts::ARCH,
+        "isMobile": cfg!(target_os = "android") || cfg!(target_os = "ios"),
+        "cpuName": device_cpu_name(),
+        "gpuName": device_gpu_name(),
+        "accelerators": inference::ort_engine::status()
+            .get("accelerators")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    }))
+}
+
 #[tauri::command]
 async fn get_model_dir(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
     // Refresh from settings so a user-changed dir is reflected immediately.
@@ -1217,6 +1321,7 @@ pub fn run() {
             // App / platform
             get_app_version,
             get_platform_info,
+            get_device_info,
             get_model_dir,
             // Settings
             get_settings,

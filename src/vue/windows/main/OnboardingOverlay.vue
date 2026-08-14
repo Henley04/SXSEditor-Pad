@@ -89,8 +89,8 @@
 import { ref, onMounted, watch } from 'vue';
 import * as spa from '../../../spa/router.js';
 import { BENCHMARK_MODEL_BASE64 } from '../../../assets/benchmark_model.js';
-import { ensureOrt, isNativeBackend } from '../../../inference/webnn/ortSetup.js';
-import { detectNativeAccelerators } from '../../../inference/native/nativeOrtClient.js';
+import { tryInitNativeBackend, detectNativeAccelerators } from '../../../inference/native/nativeOrtClient.js';
+import { getCPUName, getGPUName, acceleratorLabel } from '../../../utils/deviceNames.js';
 
 const visible = ref(false);
 const step = ref(1);
@@ -153,18 +153,25 @@ async function cleanupBenchmarkModel(filePath) {
 
 async function runBenchmark() {
   benchLoading.value = true;
-  benchStatus.value = '正在加载 ONNX Runtime...';
+  benchStatus.value = '正在加载原生 ONNX Runtime...';
   benchResults.value = [];
   benchStarted.value = true;
 
   const results = [];
 
-  // Load the same ORT instance the app uses (native ORT first, ort-web fallback).
+  // The onboarding hardware check must reflect the real production backend:
+  // Rust ORT (NNAPI / CoreML / CPU), never onnxruntime-web. If the native
+  // backend is unavailable we report it honestly instead of benchmarking a
+  // misleading WebNN/WASM path.
   let ort;
   try {
-    ort = await ensureOrt();
+    ort = await tryInitNativeBackend();
   } catch (err) {
-    console.warn('[benchmark] Failed to load ONNX Runtime:', err);
+    console.warn('[benchmark] Failed to load native ONNX Runtime:', err);
+    ort = null;
+  }
+  if (!ort) {
+    benchStatus.value = '原生 ONNX Runtime 不可用，无法进行硬件检测';
     benchResults.value = [
       { ep: 'cpu', label: 'CPU', icon: '\u{2699}\u{FE0F}', available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '' },
       { ep: 'npu', label: 'NPU', icon: '\u{1F9EE}', available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '' },
@@ -175,7 +182,8 @@ async function runBenchmark() {
     return;
   }
 
-  const native = isNativeBackend();
+  // Real device identity from the Rust backend (SoC model, accelerator set).
+  const deviceInfo = await getDeviceInfo();
 
   // Decode base64 model to Uint8Array
   const binaryString = atob(BENCHMARK_MODEL_BASE64);
@@ -184,15 +192,12 @@ async function runBenchmark() {
     modelBytes[i] = binaryString.charCodeAt(i);
   }
 
-  // For the native backend, write the model to a temp file and use __modelPath.
-  // For ort-web fallback, pass modelBytes directly.
-  let benchModelPath = null;
-  if (native) {
-    benchStatus.value = '正在准备基准测试模型...';
-    benchModelPath = await writeBenchmarkModelToDisk(modelBytes);
-    if (!benchModelPath) {
-      console.warn('[benchmark] Cannot write model to disk; native benchmark will fail.');
-    }
+  // The native backend requires a model file path (__modelPath); sessions are
+  // created from the file on disk, so write the benchmark model to a temp file.
+  benchStatus.value = '正在准备基准测试模型...';
+  const benchModelPath = await writeBenchmarkModelToDisk(modelBytes);
+  if (!benchModelPath) {
+    console.warn('[benchmark] Cannot write model to disk; native benchmark will fail.');
   }
 
   // Test data: [1, 64, 64] float32
@@ -206,37 +211,21 @@ async function runBenchmark() {
   const WARMUP_ITERS = 10;
   const BENCH_ITERS = 50;
 
-  // Detect available native accelerators for display purposes.
-  // We do NOT skip benchmarks based on this — we attempt each EP and let
-  // failures mark it as "unsupported". The accelerator detection from
-  // platform_accelerators() only tells us if the EP is compiled in, not
-  // if the actual hardware is present.
-  let accelerators = null;
-  if (native) {
-    accelerators = await detectNativeAccelerators();
-    console.log('[benchmark] Native accelerators:', JSON.stringify(accelerators));
-  }
+  // Detect available native accelerators for display purposes. On the native
+  // backend NNAPI (Android) / CoreML (iOS) expose a single accelerator EP with
+  // an internal CPU fallback, so we gate the NPU/GPU/DSP rows on this result —
+  // a session that "succeeds" does NOT prove the accelerator exists.
+  const accelerators = await detectNativeAccelerators();
+  console.log('[benchmark] Native accelerators:', JSON.stringify(accelerators));
 
-  // Helper: create a session for the given device preference.
-  // For native backend: use __modelPath + devicePreference.
-  // For ort-web: use modelBytes + executionProviders.
+  // Helper: create a session for the given Rust device preference.
   async function createSession(devicePref) {
-    if (native && benchModelPath) {
-      return await ort.InferenceSession.create(null, {
-        __modelPath: benchModelPath,
-        __modelId: `bench-${devicePref}-${Date.now()}`,
-        executionProviders: devicePref === 'cpu' ? ['wasm'] : [{ name: 'webnn', deviceType: devicePref }],
-        graphOptimizationLevel: 'all',
-        devicePreference: devicePref,
-      });
-    } else {
-      return await ort.InferenceSession.create(modelBytes, {
-        executionProviders: devicePref === 'cpu'
-          ? ['wasm']
-          : [{ name: 'webnn', deviceType: devicePref }],
-        graphOptimizationLevel: 'all',
-      });
-    }
+    return await ort.InferenceSession.create(null, {
+      __modelPath: benchModelPath,
+      __modelId: `bench-${devicePref}-${Date.now()}`,
+      graphOptimizationLevel: 'all',
+      devicePreference: devicePref,
+    });
   }
 
   /**
@@ -276,7 +265,7 @@ async function runBenchmark() {
       available: true,
       avgMs: r.avgMs,
       tops: r.tops,
-      device: getCPUName(),
+      device: getCPUName(deviceInfo),
       speedLabel: getSpeedLabel(r.avgMs),
       speedClass: getSpeedClass(r.avgMs),
     });
@@ -289,18 +278,14 @@ async function runBenchmark() {
   }
 
   // --- NPU benchmark ---
-  // On the native backend the Rust engine always folds a CPU fallback into
-  // the session (execution_providers_for), so a session that "succeeds" does
-  // NOT prove the NPU exists — it just proves the model loaded on CPU. Gating
-  // on accelerator detection prevents a phone without an NPU from being shown
-  // an "available" NPU row with CPU-level numbers.
+  // On the native backend NNAPI (Android) / CoreML (iOS) fold a CPU fallback
+  // into every session, so a session that "succeeds" does NOT prove the NPU
+  // exists — it just proves the model loaded on CPU. Gating on accelerator
+  // detection prevents a phone without an NPU from being shown an "available"
+  // NPU row with CPU-level numbers.
+  const npuLabel = acceleratorLabel(deviceInfo, 'NPU');
   const npuDetected = accelerators && accelerators.npu;
-  if (native && !npuDetected) {
-    results.push({
-      ep: 'npu', label: 'NPU', icon: '\u{1F9EE}',
-      available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
-    });
-  } else {
+  if (npuDetected) {
     try {
       benchStatus.value = '正在测试 NPU 算力...';
       const r = await benchOne('npu');
@@ -311,30 +296,27 @@ async function runBenchmark() {
         available: true,
         avgMs: r.avgMs,
         tops: r.tops,
-        device: native ? 'NPU (NNAPI/CoreML)' : 'NPU (WebNN)',
+        device: npuLabel,
         speedLabel: getSpeedLabel(r.avgMs),
         speedClass: getSpeedClass(r.avgMs),
       });
     } catch (err) {
       console.info('[benchmark] NPU not available:', err.message);
-      // If accelerator detection says available but benchmark failed, still
-      // show it as available with no performance data (consistent with settings).
       results.push({
         ep: 'npu', label: 'NPU', icon: '\u{1F9EE}',
-        available: npuDetected || false, avgMs: 0, tops: 0,
-        device: npuDetected ? 'NPU (NNAPI/CoreML)' : '', speedLabel: '', speedClass: '',
+        available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
       });
     }
+  } else {
+    results.push({
+      ep: 'npu', label: 'NPU', icon: '\u{1F9EE}',
+      available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
+    });
   }
 
   // --- GPU benchmark ---
   const gpuDetected = accelerators && accelerators.gpu;
-  if (native && !gpuDetected) {
-    results.push({
-      ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}',
-      available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
-    });
-  } else {
+  if (gpuDetected) {
     try {
       benchStatus.value = '正在测试 GPU 算力...';
       const r = await benchOne('gpu');
@@ -345,7 +327,7 @@ async function runBenchmark() {
         available: true,
         avgMs: r.avgMs,
         tops: r.tops,
-        device: native ? 'GPU (NNAPI/CoreML)' : getGPUName(),
+        device: getGPUName(deviceInfo),
         speedLabel: getSpeedLabel(r.avgMs),
         speedClass: getSpeedClass(r.avgMs),
       });
@@ -353,20 +335,19 @@ async function runBenchmark() {
       console.info('[benchmark] GPU not available:', err.message);
       results.push({
         ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}',
-        available: gpuDetected || false, avgMs: 0, tops: 0,
-        device: gpuDetected ? 'GPU (NNAPI/CoreML)' : '', speedLabel: '', speedClass: '',
+        available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
       });
     }
+  } else {
+    results.push({
+      ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}',
+      available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
+    });
   }
 
   // --- DSP benchmark (Android only via NNAPI) ---
   const dspDetected = accelerators && accelerators.dsp;
-  if (native && !dspDetected) {
-    results.push({
-      ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}',
-      available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
-    });
-  } else {
+  if (dspDetected) {
     try {
       benchStatus.value = '正在测试 DSP 算力...';
       const r = await benchOne('dsp');
@@ -377,7 +358,7 @@ async function runBenchmark() {
         available: true,
         avgMs: r.avgMs,
         tops: r.tops,
-        device: 'DSP (Hexagon/QDSP)',
+        device: acceleratorLabel(deviceInfo, 'DSP'),
         speedLabel: getSpeedLabel(r.avgMs),
         speedClass: getSpeedClass(r.avgMs),
       });
@@ -385,10 +366,14 @@ async function runBenchmark() {
       console.info('[benchmark] DSP not available:', err.message);
       results.push({
         ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}',
-        available: dspDetected || false, avgMs: 0, tops: 0,
-        device: dspDetected ? 'DSP (Hexagon/QDSP)' : '', speedLabel: '', speedClass: '',
+        available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
       });
     }
+  } else {
+    results.push({
+      ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}',
+      available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
+    });
   }
 
   benchResults.value = results;
@@ -400,35 +385,25 @@ async function runBenchmark() {
   }
 }
 
-function getCPUName() {
-  const ua = navigator.userAgent || '';
-  // UA CPU segments look like:
-  //   "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz"
-  //   "AMD Ryzen 7 5800H with Radeon Graphics"
-  //   "Apple M1 Pro"
-  //   "Qualcomm SM8550-AB Snapdragon 8 Gen 3"
-  const m = ua.match(/(?:Intel|AMD|Apple|Snapdragon|Exynos|Kirin|Dimensity|MediaTek|Tensor)[^;]*/i);
-  if (m) {
-    // Strip the trailing "CPU @ 2.60GHz" clock suffix for a cleaner label.
-    return m[0].replace(/\s*(?:CPU\s*)?@\s*[\d.]+\s*GHz/i, '').trim();
+/**
+ * Fetch real device identity from the Rust backend. Falls back to a UA-parsed
+ * guess only if the native command is unavailable.
+ */
+async function getDeviceInfo() {
+  try {
+    const info = await window.electronAPI.getDeviceInfo();
+    if (info) return info;
+  } catch (err) {
+    console.warn('[benchmark] getDeviceInfo failed:', err?.message || err);
   }
-  // Fallback: report core count
-  return `${navigator.hardwareConcurrency || '?'} 核 CPU`;
-}
-
-function getGPUName() {
-  const canvas = document.createElement('canvas');
-  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-  if (gl) {
-    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-    if (debugInfo) {
-      const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
-      if (renderer) return renderer;
-    }
-  }
-  // WebGL is often unavailable in a mobile WebView; fall back to the
-  // execution-provider label instead of a fabricated "WebGL GPU" name.
-  return 'GPU (WebNN)';
+  return {
+    platform: 'unknown',
+    arch: '',
+    isMobile: false,
+    cpuName: null,
+    gpuName: null,
+    accelerators: {},
+  };
 }
 
 function getSpeedLabel(ms) {
