@@ -205,16 +205,19 @@ async function runBenchmark() {
     }
   }
 
-  // Test data: [1, 64, 64] float32
-  const inputSize = 64 * 64;
+  // Test data: [1, 128, 250] float32 — mel frames (C=128, T=250 = 5 s @ 50 Hz),
+  // matching the ConvNeXtV2 benchmark model / real SoulX-Singer input.
+  const inputSize = 128 * 250;
   const inputData = new Float32Array(inputSize);
   for (let i = 0; i < inputSize; i++) {
     inputData[i] = Math.random();
   }
-  const inputTensor = { input: new ort.Tensor('float32', inputData, [1, 64, 64]) };
+  const inputTensor = { input: new ort.Tensor('float32', inputData, [1, 128, 250]) };
 
-  const WARMUP_ITERS = 10;
-  const BENCH_ITERS = 50;
+  // The benchmark model does ~1.62 GFLOPs/inference, so fewer iterations are
+  // enough for a stable, compute-dominated average without a long wait.
+  const WARMUP_ITERS = 5;
+  const BENCH_ITERS = 20;
 
   // Detect available native accelerators for display purposes. On the native
   // backend NNAPI (Android) / CoreML (iOS) expose a single accelerator EP with
@@ -271,10 +274,11 @@ async function runBenchmark() {
     const t1 = performance.now();
     const avgMs = (t1 - t0) / BENCH_ITERS;
     session.release();
-    // Estimate TOPS: the benchmark model is a MatMul [1,64,64] x [64,64],
-    // = 2 * 64 * 64 * 64 = 524288 FLOPs per inference.
+    // Estimate TOPS: the benchmark model is a stack of 24 ConvNeXtV2 blocks on
+    // [1,128,250] mel frames = 1,615,872,000 FLOPs/inference (mirrors the real
+    // SoulX-Singer preflow/vocoder conv backbone).
     // TOPS = FLOPs / (avgMs * 1e-3) / 1e12
-    const FLOPS_PER_INFER = 2 * 64 * 64 * 64;
+    const FLOPS_PER_INFER = 24 * (2 * 250 * (128 * 512 + 512 * 7 + 512 * 128));
     const tops = (FLOPS_PER_INFER / (avgMs * 1e-3)) / 1e12;
     return { available: true, avgMs, tops };
   }
