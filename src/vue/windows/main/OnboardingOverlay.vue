@@ -205,16 +205,18 @@ async function runBenchmark() {
     }
   }
 
-  // Test data: [1, 64, 64] float32
-  const inputSize = 64 * 64;
+  // Test data: [1, 512, 512] float32 — matches the compute-bound MatMul chain.
+  const inputSize = 512 * 512;
   const inputData = new Float32Array(inputSize);
   for (let i = 0; i < inputSize; i++) {
     inputData[i] = Math.random();
   }
-  const inputTensor = { input: new ort.Tensor('float32', inputData, [1, 64, 64]) };
+  const inputTensor = { input: new ort.Tensor('float32', inputData, [1, 512, 512]) };
 
-  const WARMUP_ITERS = 10;
-  const BENCH_ITERS = 50;
+  // The benchmark model now does ~2.15 GFLOPs/inference, so fewer iterations
+  // are enough for a stable, compute-dominated average without a long wait.
+  const WARMUP_ITERS = 5;
+  const BENCH_ITERS = 20;
 
   // Detect available native accelerators for display purposes. On the native
   // backend NNAPI (Android) / CoreML (iOS) expose a single accelerator EP with
@@ -271,10 +273,10 @@ async function runBenchmark() {
     const t1 = performance.now();
     const avgMs = (t1 - t0) / BENCH_ITERS;
     session.release();
-    // Estimate TOPS: the benchmark model is a MatMul [1,64,64] x [64,64],
-    // = 2 * 64 * 64 * 64 = 524288 FLOPs per inference.
+    // Estimate TOPS: the benchmark model is a chain of 8 MatMuls,
+    // each [1,512,512] x [512,512] = 8 * 2 * 512^3 = 2147483648 FLOPs/inference.
     // TOPS = FLOPs / (avgMs * 1e-3) / 1e12
-    const FLOPS_PER_INFER = 2 * 64 * 64 * 64;
+    const FLOPS_PER_INFER = 8 * 2 * 512 * 512 * 512;
     const tops = (FLOPS_PER_INFER / (avgMs * 1e-3)) / 1e12;
     return { available: true, avgMs, tops };
   }
