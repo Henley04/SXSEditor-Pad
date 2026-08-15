@@ -147,6 +147,14 @@ jobs:
       - name: Initialize Tauri Android project
         run: npx tauri android init --ci 2>/dev/null || true
 
+      - name: Bundle ONNX Runtime native library (${{ matrix.abi }})
+        # The Rust `ort` crate uses `load-dynamic`, so libonnxruntime.so must be
+        # present in the APK's jniLibs or ORT init fails and every hardware row
+        # reports "unsupported". Download the ONNX Runtime Android AAR matching
+        # the pinned ort version (2.0.0-rc.13 -> 1.28) and extract the .so for
+        # this matrix ABI into the generated jniLibs dir.
+        run: bash "$GITHUB_WORKSPACE/scripts/bundle-ort-android.sh" "${{ matrix.abi }}"
+
       - name: Configure Android release signing
         # Gradle's `release` buildType ships an UNSIGNED apk by default —
         # that is what made every CI-built APK fail to install with
@@ -348,6 +356,12 @@ jobs:
 
       - name: Initialize Tauri Android project
         run: npx tauri android init --ci 2>/dev/null || true
+
+      - name: Bundle ONNX Runtime native library (all ABIs)
+        # See the per-ABI job for why libonnxruntime.so must be bundled. The
+        # universal APK ships all ABIs, so extract the .so for each supported
+        # architecture into the generated jniLibs dir.
+        run: bash "$GITHUB_WORKSPACE/scripts/bundle-ort-android.sh" arm64-v8a armeabi-v7a x86_64
 
       - name: Configure Android release signing
         # Same signing setup as the per-ABI job (see comment there). The
