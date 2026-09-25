@@ -1156,12 +1156,39 @@ function removeDocListeners() {
 }
 
 // ==================== IPC listeners ====================
+/**
+ * Consume the preprocess-result handoff persisted by the audio-preprocess
+ * view (`send_preprocess_data` → Rust cache file). The multi-page SPA
+ * navigation remounts this view AFTER the preprocess view saved and
+ * navigated back, so an event emitted at save time would be lost — the
+ * result is therefore picked up here on mount, matched against the current
+ * wav, and cleared after consumption.
+ */
+async function consumePreprocessResultHandoff() {
+  if (!window.electronAPI || !window.electronAPI.loadPreprocessHandoff) return;
+  try {
+    const handoff = await window.electronAPI.loadPreprocessHandoff();
+    if (!handoff || handoff.kind !== 'preprocess-result') return;
+    // 只有当WAV文件存在时才接受预处理数据，防止清除WAV后预处理窗口仍回调覆盖状态
+    if (!store.wavFileBuffer) return;
+    const result = handoff.data;
+    // Guard against a stale result left over from a previous wav selection.
+    if (result && result.wavFileName && store.wavFileName && result.wavFileName !== store.wavFileName) return;
+    store.setPreprocessResult(result);
+    if (window.electronAPI.clearPreprocessHandoff) {
+      await window.electronAPI.clearPreprocessHandoff();
+    }
+  } catch (err) {
+    console.warn('[singerCreator] consume preprocess handoff failed:', err);
+  }
+}
+
 function registerIpcListeners() {
   if (window.electronAPI && window.electronAPI.onPreprocessDataSaved) {
-    _preprocessCleanup = window.electronAPI.onPreprocessDataSaved((result) => {
-      // 只有当WAV文件存在时才接受预处理数据，防止清除WAV后预处理窗口仍回调覆盖状态
-      if (!store.wavFileBuffer) return;
-      store.setPreprocessResult(result);
+    _preprocessCleanup = window.electronAPI.onPreprocessDataSaved(() => {
+      // The result itself is persisted in the Rust handoff file; load it from
+      // there (event payloads stay small by design).
+      consumePreprocessResultHandoff();
     });
   }
   // Menu-driven save / save-as requests (sent from the main process menu).
@@ -1192,6 +1219,9 @@ onMounted(() => {
   initWindowTheme(_themeCleanups);
   registerIpcListeners();
   registerDocListeners();
+  // Pick up a preprocess result saved by the audio-preprocess view before it
+  // navigated back here (see consumePreprocessResultHandoff).
+  consumePreprocessResultHandoff();
   console.log(t('singerCreator.pageStarted'));
 });
 

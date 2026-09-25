@@ -205,19 +205,23 @@ async function runBenchmark() {
     }
   }
 
-  // Test data: [1, 128, 250] float32 — mel frames (C=128, T=250 = 5 s @ 50 Hz),
-  // matching the ConvNeXtV2 benchmark model / real SoulX-Singer input.
-  const inputSize = 128 * 250;
+  // Test data: [S, S] float32 GEMM input (S=768) — the benchmark model is a
+  // compute-bound MatMul chain, so the input is a plain dense matrix.
+  const BENCH_S = 768;
+  const inputSize = BENCH_S * BENCH_S;
   const inputData = new Float32Array(inputSize);
   for (let i = 0; i < inputSize; i++) {
     inputData[i] = Math.random();
   }
-  const inputTensor = { input: new ort.Tensor('float32', inputData, [1, 128, 250]) };
+  const inputTensor = { input: new ort.Tensor('float32', inputData, [BENCH_S, BENCH_S]) };
 
-  // The benchmark model does ~1.62 GFLOPs/inference, so fewer iterations are
-  // enough for a stable, compute-dominated average without a long wait.
-  const WARMUP_ITERS = 5;
-  const BENCH_ITERS = 20;
+  // Timing: warm up, then run repeatedly until at least TARGET_MS of wall
+  // clock has accumulated (bounded), so the average is stable on both fast
+  // phones (sub-5 ms/iter) and slow devices (100+ ms/iter).
+  const WARMUP_ITERS = 3;
+  const TARGET_MS = 1500;
+  const MIN_ITERS = 3;
+  const MAX_ITERS = 60;
 
   // Detect available native accelerators for display purposes. On the native
   // backend NNAPI (Android) / CoreML (iOS) expose a single accelerator EP with
@@ -264,16 +268,26 @@ async function runBenchmark() {
    */
   async function benchOne(devicePref) {
     const session = await createSession(devicePref);
-    // Warmup
+    // Warmup (JIT / NNAPI compilation / cache effects).
     for (let i = 0; i < WARMUP_ITERS; i++) {
       await session.run(inputTensor);
     }
     const t0 = performance.now();
-    for (let i = 0; i < BENCH_ITERS; i++) {
+    let iters = 0;
+    let elapsed = 0;
+    // Loop until TARGET_MS accumulated (or bounds hit) — keeps the average
+    // stable across a ~100x device speed range.
+    do {
       await session.run(inputTensor);
+      iters++;
+      elapsed = performance.now() - t0;
+    } while (elapsed < TARGET_MS && iters < MAX_ITERS);
+    for (let i = iters; i < MIN_ITERS; i++) {
+      await session.run(inputTensor);
+      iters++;
+      elapsed = performance.now() - t0;
     }
-    const t1 = performance.now();
-    const avgMs = (t1 - t0) / BENCH_ITERS;
+    const avgMs = elapsed / iters;
     session.release();
     // A zero/negative average means the timing was unusable (clock granularity
     // or a caching layer) — treat as a failed benchmark instead of computing
@@ -281,13 +295,15 @@ async function runBenchmark() {
     if (!(avgMs > 0)) {
       throw new Error('benchmark timing unavailable');
     }
-    // Estimate TOPS: the benchmark model is a stack of 24 ConvNeXtV2 blocks on
-    // [1,128,250] mel frames = 1,615,872,000 FLOPs/inference (mirrors the real
-    // SoulX-Singer preflow/vocoder conv backbone).
-    // TOPS = FLOPs / (avgMs * 1e-3) / 1e12
-    const FLOPS_PER_INFER = 24 * (2 * 250 * (128 * 512 + 512 * 7 + 512 * 128));
-    const tops = (FLOPS_PER_INFER / (avgMs * 1e-3)) / 1e12;
-    return { available: true, avgMs, tops: Number.isFinite(tops) ? tops : 0 };
+    // Measured throughput: the benchmark model is a compute-bound GEMM chain —
+    // LAYERS=4 chained MatMul [768,768]x[768,768], FLOPs = 4 * 2 * 768^3.
+    // Dense GEMM saturates CPU (MLAS FP32) and accelerator (NNAPI/CoreML FP16)
+    // alike, so the reported value approximates real peak hardware throughput
+    // instead of per-layer dispatch overhead (the old conv-stack workload was
+    // memory-bound and reported ~45 GOPS on a flagship SoC).
+    const FLOPS_PER_INFER = 4 * 2 * 768 * 768 * 768; // ≈ 3.62 GFLOPs
+    const tops = (FLOPS_PER_INFER * iters / (elapsed * 1e-3)) / 1e12;
+    return { available: true, avgMs, tops: Number.isFinite(tops) ? tops : 0, iters };
   }
 
   // --- CPU benchmark (always available) ---

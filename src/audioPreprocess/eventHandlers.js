@@ -6,6 +6,7 @@ import { extractF0AndPitch } from './f0Extraction.js';
 import { extractF0BasicPitch, importMidiFile } from './midiExtraction.js';
 import { saveSingerData } from './uiControls.js';
 import { t } from '../i18n/index.js';
+import { navigate as spaNavigate } from '../spa/router.js';
 
 // Playhead 拖拽状态：mousedown 时置 true，mouseup/mouseleave 时置 false。
 // 用于在 mousemove 中区分"拖拽中实时更新视觉"与"仅悬停显示光标/tooltip"。
@@ -147,7 +148,9 @@ export function setupEventHandlers() {
   dom.btnSave.addEventListener('click', saveSingerData);
   dom.btnBack.addEventListener('click', () => {
     stopPlayback();
-    window.close();
+    // SPA single-WebView shell: window.close() is a no-op. Navigate back to
+    // the singer-creator view (the only entry point of audio-preprocess).
+    spaNavigate('singer-creator');
   });
 
   // Waveform canvas: playhead 拖拽 + 悬停 tooltip

@@ -15,6 +15,24 @@ import { listen, emit } from '@tauri-apps/api/event';
 import { readFile } from '@tauri-apps/plugin-fs';
 import * as spa from './spa/router.js';
 
+// --------------------------- helpers ---------------------------
+
+/**
+ * ArrayBuffer → base64 (chunked to avoid String.fromCharCode.apply arg limits).
+ * Used for the preprocess wav handoff: the SPA mailbox's sessionStorage mirror
+ * silently elides typed arrays larger than 4 MB, so song-sized buffers must be
+ * persisted via the Rust cache file instead.
+ */
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
 // --------------------------- event helpers ---------------------------
 
 const _listeners = {};
@@ -121,11 +139,36 @@ const tauriBridge = {
   onSingerCreatorSaveAsRequest: (callback) => onEvent('singer-creator:save-as-request', callback),
   onSingerCreated: (callback) => onEvent('singerCreated', callback),
 
-  // Audio preprocess
-  openAudioPreprocess: (data) => {
-    spa.mailbox('audio-preprocess', data);
+  // Audio preprocess. The wav buffer is persisted via the Rust cache file
+  // (`save_preprocess_handoff`) BEFORE navigating: it can be tens of MB and
+  // would be silently dropped by the SPA mailbox's sessionStorage mirror
+  // (4 MB per-array cap). The mailbox only carries lightweight metadata for
+  // same-page consumers; the target view reads the full payload back with
+  // `loadPreprocessHandoff`.
+  openAudioPreprocess: async (data) => {
+    let payload = { ...data, wavBuffer: null };
+    let mailPayload = payload;
+    if (data && data.wavBuffer) {
+      try {
+        const wavBufferB64 = arrayBufferToBase64(data.wavBuffer);
+        await invoke('save_preprocess_handoff', {
+          payload: { ...payload, wavBufferB64, wavByteLength: data.wavBuffer.byteLength },
+        });
+      } catch (err) {
+        // Handoff save failed — keep the inline path (works for small clips
+        // within the 4 MB mirror budget) instead of blocking navigation.
+        console.warn('[bridge] save_preprocess_handoff failed; falling back to mailbox:', err);
+        mailPayload = { ...data };
+      }
+    }
+    // The mailbox carries metadata only (the heavy wav buffer lives in the
+    // Rust handoff file); the target view loads the full payload via
+    // `loadPreprocessHandoff`.
+    spa.mailbox('audio-preprocess', mailPayload);
     return spa.navigate('audio-preprocess');
   },
+  loadPreprocessHandoff: () => invoke('load_preprocess_handoff'),
+  clearPreprocessHandoff: () => invoke('clear_preprocess_handoff'),
   sendPreprocessData: (data) => invoke('send_preprocess_data', { data }),
   onPreprocessDataSaved: (callback) => onEvent('preprocessDataSaved', callback),
   onLoadPreprocessData: (callback) => onEvent('loadPreprocessData', callback),

@@ -5,6 +5,7 @@ import { mergePhoneme } from '../utils/mergePhoneme.js';
 import { tokenizeLyric } from '../utils/cjkUtils.js';
 import { showAlertDialog } from '../alertDialog.js';
 import { stopPlayback } from './playback.js';
+import { navigate as spaNavigate } from '../spa/router.js';
 
 export function buildSingerFields(notes) {
   const mergedNotes = mergePhoneme(notes);
@@ -353,13 +354,19 @@ export async function saveSingerData() {
       singerData: state.singerData,
       f0Data: state.f0Data,
       midiNotes: state.pianoRoll ? state.pianoRoll.notes : [],
+      // Lets the singer-creator view reject a stale result left over from a
+      // previous wav selection.
+      wavFileName: state.wavFileName,
     };
 
     await window.electronAPI.sendPreprocessData(preprocessResult);
 
     showAlertDialog(t('preprocess.preprocessSaveSuccess'), () => {
       stopPlayback();
-      window.close();
+      // SPA single-WebView shell: window.close() is a no-op. Return to the
+      // singer-creator view, which consumes the preprocess-result handoff on
+      // load (sendPreprocessData persisted it via the Rust side).
+      spaNavigate('singer-creator');
     });
   } catch (err) {
     console.error('Save failed:', err);

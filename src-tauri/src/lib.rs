@@ -977,8 +977,66 @@ async fn open_audio_preprocess(_app: AppHandle, _data: Value) -> Result<(), Stri
 }
 
 #[tauri::command]
-async fn send_preprocess_data(_app: AppHandle, _data: Value) -> Result<(), String> {
+async fn send_preprocess_data(app: AppHandle, data: Value) -> Result<(), String> {
+    // Persist the preprocess result for the singer-creator view. The SPA
+    // navigates back after this resolves; the target view consumes the
+    // handoff file on load (event-driven handoff is unreliable across the
+    // multi-page navigation — the listener page is not mounted yet when the
+    // event fires).
+    write_preprocess_handoff(&app, &serde_json::json!({ "kind": "preprocess-result", "data": data }))
+}
+
+#[tauri::command]
+async fn save_preprocess_handoff(app: AppHandle, payload: Value) -> Result<(), String> {
+    // Inbound handoff: singer-creator → audio-preprocess (wav buffer as base64).
+    // Storing via the Rust side avoids the SPA mailbox's 4 MB per-array
+    // sessionStorage mirror limit, which silently elides real song-sized
+    // Float32Array/ArrayBuffer payloads.
+    write_preprocess_handoff(&app, &serde_json::json!({ "kind": "preprocess-input", "data": payload }))
+}
+
+#[tauri::command]
+async fn load_preprocess_handoff(app: AppHandle) -> Result<Value, String> {
+    read_preprocess_handoff(&app)
+}
+
+#[tauri::command]
+async fn clear_preprocess_handoff(app: AppHandle) -> Result<(), String> {
+    let path = preprocess_handoff_path(&app)?;
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("remove handoff failed: {}", e))?;
+    }
     Ok(())
+}
+
+fn preprocess_handoff_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("resolve cache dir failed: {}", e))?;
+    Ok(dir.join("preprocess-handoff.json"))
+}
+
+fn write_preprocess_handoff(app: &AppHandle, payload: &Value) -> Result<(), String> {
+    let path = preprocess_handoff_path(app)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create handoff dir failed: {}", e))?;
+    }
+    let bytes = serde_json::to_vec(payload).map_err(|e| format!("serialize handoff failed: {}", e))?;
+    // Write via temp + rename so a crash mid-write never yields a torn file.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, bytes).map_err(|e| format!("write handoff failed: {}", e))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("commit handoff failed: {}", e))?;
+    Ok(())
+}
+
+fn read_preprocess_handoff(app: &AppHandle) -> Result<Value, String> {
+    let path = preprocess_handoff_path(app)?;
+    if !path.exists() {
+        return Ok(Value::Null);
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("read handoff failed: {}", e))?;
+    serde_json::from_slice(&bytes).map_err(|e| format!("parse handoff failed: {}", e))
 }
 
 fn fragments_dir(app: &AppHandle) -> PathBuf {
@@ -1411,6 +1469,9 @@ pub fn run() {
             open_singer_market,
             open_audio_preprocess,
             send_preprocess_data,
+            save_preprocess_handoff,
+            load_preprocess_handoff,
+            clear_preprocess_handoff,
             // MIDI / pitch
             extract_f0_onnx,
             extract_midi_rosvot,
