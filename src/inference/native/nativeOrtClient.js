@@ -211,21 +211,38 @@ export async function getNativeStatus() {
     }
 }
 
-/** 原生加速器探测（替代 navigator.ml 的 WebNN 检测） */
+/**
+ * 原生加速器探测（替代 navigator.ml 的 WebNN 检测）。
+ *
+ * 返回结构如实反映底层 EP 能力：Android 上只有 NNAPI 一个 EP（内部自动
+ * 选择 NPU/GPU/DSP，无法在 EP 层区分目标硬件），iOS 上只有 CoreML。
+ * 之前把 nnapi/coreml 复制成 npu/gpu/dsp 三个"可用"标志，导致引导页
+ * 对同一 EP 跑三次 benchmark 显示三份几乎相同的算力值（检测结果不可信）。
+ *
+ * 返回: { nnapi, coreml, dsp, cpu, raw }
+ *   nnapi/coreml — 该平台加速器 EP 是否编译/可用
+ *   dsp          — 仅 Android（经 NNAPI 的 Hexagon/QDSP），
+ *                  与 nnapi 同源，不单独代表第三个可测硬件
+ */
 export async function detectNativeAccelerators() {
     if (!window.electronAPI?.nativeOrtDetectAccelerators) {
-        return { npu: false, gpu: false, dsp: false, cpu: true };
+        return { nnapi: false, coreml: false, dsp: false, cpu: true };
     }
     try {
         const acc = await window.electronAPI.nativeOrtDetectAccelerators();
         return {
-            npu: Boolean(acc?.nnapi || acc?.coreml),
-            gpu: Boolean(acc?.nnapi || acc?.coreml),
-            dsp: Boolean(acc?.dsp || acc?.nnapi),
+            nnapi: Boolean(acc?.nnapi),
+            coreml: Boolean(acc?.coreml),
+            dsp: Boolean(acc?.dsp) || Boolean(acc?.nnapi),
             cpu: true,
             raw: acc,
         };
     } catch (_) {
-        return { npu: false, gpu: false, dsp: false, cpu: true };
+        return { nnapi: false, coreml: false, dsp: false, cpu: true };
     }
+}
+
+/** 任一硬件加速器 EP 是否可用（Android NNAPI / iOS CoreML）。 */
+export function hasAcceleratorEp(acc) {
+    return Boolean(acc && (acc.nnapi || acc.coreml));
 }

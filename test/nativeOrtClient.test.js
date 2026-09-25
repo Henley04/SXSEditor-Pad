@@ -171,17 +171,30 @@ describe('nativeOrtClient', () => {
   });
 
   describe('detectNativeAccelerators', () => {
-    it('nnapi 可用 → npu/gpu true', async () => {
+    it('nnapi 可用 → nnapi/dsp true（如实反映单一 EP，不再伪造 npu/gpu 三份）', async () => {
       mockApi();
       const acc = await client.detectNativeAccelerators();
-      expect(acc.npu).to.equal(true);
+      expect(acc.nnapi).to.equal(true);
+      expect(acc.coreml).to.equal(false);
+      expect(acc.dsp).to.equal(true); // DSP via NNAPI
       expect(acc.cpu).to.equal(true);
+      expect(client.hasAcceleratorEp(acc)).to.equal(true);
+    });
+
+    it('coreml 可用 → coreml true', async () => {
+      mockApi({ nativeOrtDetectAccelerators: sinon.stub().resolves({ nnapi: false, coreml: true, dsp: false }) });
+      const acc = await client.detectNativeAccelerators();
+      expect(acc.nnapi).to.equal(false);
+      expect(acc.coreml).to.equal(true);
+      expect(acc.dsp).to.equal(false);
+      expect(client.hasAcceleratorEp(acc)).to.equal(true);
     });
 
     it('无桥接时安全回退', async () => {
       const acc = await client.detectNativeAccelerators();
-      expect(acc.npu).to.equal(false);
+      expect(acc.nnapi).to.equal(false);
       expect(acc.cpu).to.equal(true);
+      expect(client.hasAcceleratorEp(acc)).to.equal(false);
     });
   });
 });

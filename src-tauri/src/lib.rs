@@ -413,7 +413,9 @@ async fn model_download_check(app: AppHandle) -> Result<Value, String> {
         .and_then(|v| v.as_str())
         .unwrap_or(models::DEFAULT_PRECISION)
         .to_string();
-    let missing = models::check_missing(&app, &prec, "master").await;
+    // "latest" — resolved inside check_missing against the repo's newest
+    // tag, so the check matches what model_download_start downloads.
+    let missing = models::check_missing(&app, &prec, "latest").await;
     let _ = app.emit(
         "model-download:missing-files",
         json!({ "files": missing, "precision": prec }),
@@ -471,7 +473,8 @@ async fn model_download_change_dir(app: AppHandle) -> Result<Value, String> {
 
 #[tauri::command]
 async fn model_download_recheck(app: AppHandle, precision: String) -> Result<Value, String> {
-    let missing = models::check_missing(&app, &precision, "master").await;
+    // Same revision semantics as the download flow ("latest" → newest tag).
+    let missing = models::check_missing(&app, &precision, "latest").await;
     let _ = app.emit(
         "model-download:missing-files",
         json!({ "files": missing, "precision": precision }),
@@ -485,7 +488,7 @@ async fn model_download_delete_and_recheck(
     precision: String,
 ) -> Result<Value, String> {
     models::delete_precision_files(&app, &precision)?;
-    let missing = models::check_missing(&app, &precision, "master").await;
+    let missing = models::check_missing(&app, &precision, "latest").await;
     let _ = app.emit(
         "model-download:missing-files",
         json!({ "files": missing, "precision": precision }),
@@ -515,28 +518,23 @@ async fn model_download_update(
     models::run_download(app, precision, revision, state.inner()).await
 }
 
-// --- Version checks (stubbed: only master revision is wired up for now) ---
+// --- Version checks (real implementations backed by the local manifest +
+// ModelScope revisions API; JP / SiFiGAN remain stubbed in this build) ---
 
 #[tauri::command]
 async fn model_download_check_version(
-    _app: AppHandle,
-    _precision: String,
+    app: AppHandle,
+    precision: String,
 ) -> Result<Value, String> {
-    Ok(json!({
-        "updateAvailable": false,
-        "localVersion": null,
-        "latestVersion": "master",
-        "hasModelFiles": false,
-        "localRevision": "master"
-    }))
+    Ok(models::check_version(&app, &precision).await)
 }
 
 #[tauri::command]
 async fn model_download_list_versions(
     _app: AppHandle,
-    _precision: String,
+    precision: String,
 ) -> Result<Value, String> {
-    Ok(json!([{ "tag": "master" }]))
+    Ok(models::list_versions(&precision).await)
 }
 
 #[tauri::command]

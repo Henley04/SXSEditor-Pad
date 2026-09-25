@@ -82,6 +82,7 @@ module.exports = [
             'src/utils/escapeHtml.js',
             'src/utils/gpuCache.js',
             'src/utils/deviceNames.js',
+            'src/utils/safeArea.js',
             // vite.config.js uses ESM import/export, falls through to the
             // base ESM config above.
             'vite.config.js',

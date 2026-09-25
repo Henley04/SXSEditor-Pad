@@ -16,6 +16,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { t } from '../../../i18n/index.js';
 import { formatBytes } from '../../../utils/formatBytes.js';
+import { navigate as spaNavigate } from '../../../spa/router.js';
 
 // --------------------------- helpers ---------------------------
 
@@ -592,23 +593,33 @@ export const useModelDownloadStore = defineStore('modelDownload', () => {
   }
 
   function closeWindow() {
-    window.close();
+    // The model-download view is an SPA view inside the single Tauri window
+    // (not a separate OS window), so window.close() is a no-op there — the
+    // button used to do nothing. Navigate back to the main view instead;
+    // window.close() stays as the fallback for environments where the view
+    // still runs standalone.
+    try {
+      spaNavigate('main');
+    } catch (_) {
+      window.close();
+    }
   }
 
   async function changeDir() {
     if (isDownloading.value) return;
     const result = await window.electronAPI.modelDownloadChangeDir();
-    if (result.canceled) return;
-    dirPath.value = result.modelDir;
-    updateMissingFiles(result.missing);
-    if (result.missing.length === 0) {
-      statusText.value = t('modelDownload.modelsReady');
-      statusSpinner.value = false;
-      startBtnVisible.value = false;
-      closeBtnVisible.value = true;
-    } else {
-      startBtnVisible.value = true;
-      closeBtnVisible.value = true;
+    // Rust command contract: { dir, changed } on success; { dir: null } when
+    // the user cancelled the folder picker; mobile returns the fixed sandbox
+    // dir with changed:false. The old code read { canceled, modelDir, missing }
+    // — fields the backend never sent — and crashed on undefined.slice().
+    if (!result || result.dir === null || result.dir === undefined) return; // cancelled
+    dirPath.value = result.dir;
+    if (!result.changed) return; // mobile: dir is fixed, nothing re-checks
+    // Directory changed → re-check missing files against the new location.
+    try {
+      await window.electronAPI.modelDownloadRecheck(currentPrecision.value);
+    } catch (err) {
+      console.error('Failed to recheck model files after dir change:', err);
     }
   }
 

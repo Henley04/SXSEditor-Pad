@@ -54,7 +54,7 @@
               </div>
               <div v-if="r.available" class="bench-metrics">
                 <span v-if="r.avgMs > 0" class="bench-time">{{ r.avgMs.toFixed(2) }} ms</span>
-                <span v-if="r.tops > 0" class="bench-tops">{{ formatTops(r.tops) }}</span>
+                <span v-if="r.tops > 0" class="bench-tops">{{ formatTops(r.tops) }}<b v-if="r.epBadge" class="bench-ep-badge">{{ r.epBadge }}</b></span>
                 <span v-if="r.avgMs > 0" class="bench-speed" :class="r.speedClass">{{ r.speedLabel }}</span>
                 <span v-if="r.avgMs === 0" class="bench-available-no-bench">可用</span>
               </div>
@@ -90,7 +90,7 @@ import { ref, onMounted, watch } from 'vue';
 import * as spa from '../../../spa/router.js';
 import { BENCHMARK_MODEL_BASE64 } from '../../../assets/benchmark_model.js';
 import { ensureOrt, isNativeBackend } from '../../../inference/webnn/ortSetup.js';
-import { detectNativeAccelerators } from '../../../inference/native/nativeOrtClient.js';
+import { detectNativeAccelerators, hasAcceleratorEp } from '../../../inference/native/nativeOrtClient.js';
 import { getCPUName, getGPUName, acceleratorLabel } from '../../../utils/deviceNames.js';
 
 const visible = ref(false);
@@ -250,9 +250,10 @@ async function runBenchmark() {
   }
 
   // Whether an accelerator row may be attempted / claimed as available.
-  // Native: gated on Rust accelerator detection. ort-web: only if WebNN exists.
+  // Native: gated on Rust accelerator detection (single NNAPI/CoreML EP).
+  // ort-web: only if WebNN exists.
   function canUseAccelerator(ep) {
-    if (native) return Boolean(accelerators && accelerators[ep]);
+    if (native) return hasAcceleratorEp(accelerators);
     return typeof navigator !== 'undefined' && !!navigator.ml;
   }
 
@@ -274,13 +275,19 @@ async function runBenchmark() {
     const t1 = performance.now();
     const avgMs = (t1 - t0) / BENCH_ITERS;
     session.release();
+    // A zero/negative average means the timing was unusable (clock granularity
+    // or a caching layer) — treat as a failed benchmark instead of computing
+    // an infinite TOPS value.
+    if (!(avgMs > 0)) {
+      throw new Error('benchmark timing unavailable');
+    }
     // Estimate TOPS: the benchmark model is a stack of 24 ConvNeXtV2 blocks on
     // [1,128,250] mel frames = 1,615,872,000 FLOPs/inference (mirrors the real
     // SoulX-Singer preflow/vocoder conv backbone).
     // TOPS = FLOPs / (avgMs * 1e-3) / 1e12
     const FLOPS_PER_INFER = 24 * (2 * 250 * (128 * 512 + 512 * 7 + 512 * 128));
     const tops = (FLOPS_PER_INFER / (avgMs * 1e-3)) / 1e12;
-    return { available: true, avgMs, tops };
+    return { available: true, avgMs, tops: Number.isFinite(tops) ? tops : 0 };
   }
 
   // --- CPU benchmark (always available) ---
@@ -309,14 +316,31 @@ async function runBenchmark() {
   // --- NPU / GPU / DSP (gated on accelerator availability) ---
   // On the native backend NNAPI (Android) / CoreML (iOS) fold a CPU fallback
   // into every session, so a session that "succeeds" does NOT prove the
-  // accelerator exists — it just proves the model loaded on CPU. Gating on
-  // accelerator detection prevents a device without an NPU/GPU/DSP from being
-  // shown an "available" row with CPU-level numbers.
-  const accelRows = [
-    { ep: 'npu', label: 'NPU', icon: '\u{1F9EE}', device: acceleratorLabel(deviceInfo, 'NPU') },
-    { ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}', device: getGPUName(deviceInfo) },
-    { ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}', device: acceleratorLabel(deviceInfo, 'DSP') },
-  ];
+  // accelerator exists — it just proves the model loaded on CPU.
+  //
+  // 且 NNAPI/CoreML 是单一 EP：ORT 无法在 EP 层区分 NPU/GPU/DSP（由驱动
+  // 自动分配）。之前把同一个 EP 拆成三行分别跑 benchmark，三行数字几乎
+  // 相同 —— 检测结果不可信。现在 native 后端只跑一行真实加速器 benchmark
+  //（NNAPI/CoreML 自动选择最优硬件），ort-web 回退（纯浏览器开发环境）
+  // 保留三行，因为 WebNN 的 deviceType 是真实区分的。
+  let accelRows;
+  if (native) {
+    accelRows = hasAcceleratorEp(accelerators)
+      ? [{
+          ep: 'npu',
+          label: '加速器',
+          icon: '\u{1F9EE}',
+          device: getAcceleratorDeviceLabel(deviceInfo),
+          epBadge: getAcceleratorEpBadge(deviceInfo),
+        }]
+      : [];
+  } else {
+    accelRows = [
+      { ep: 'npu', label: 'NPU', icon: '\u{1F9EE}', device: acceleratorLabel(deviceInfo, 'NPU') },
+      { ep: 'gpu', label: 'GPU', icon: '\u{1F3AE}', device: getGPUName(deviceInfo) },
+      { ep: 'dsp', label: 'DSP', icon: '\u{1F5A5}', device: acceleratorLabel(deviceInfo, 'DSP') },
+    ];
+  }
 
   for (const row of accelRows) {
     if (!canUseAccelerator(row.ep)) {
@@ -333,6 +357,7 @@ async function runBenchmark() {
         ep: row.ep, label: row.label, icon: row.icon,
         available: true, avgMs: r.avgMs, tops: r.tops,
         device: row.device,
+        epBadge: row.epBadge || '',
         speedLabel: getSpeedLabel(r.avgMs), speedClass: getSpeedClass(r.avgMs),
       });
     } catch (err) {
@@ -372,6 +397,27 @@ async function getDeviceInfo() {
     gpuName: null,
     accelerators: {},
   };
+}
+
+/**
+ * Accelerator row label for the native backend. NNAPI (Android) / CoreML
+ * (iOS) is a single EP whose internal device allocation is driver-controlled,
+ * so the row shows the EP name instead of pretending to be a specific
+ * NPU/GPU/DSP measurement.
+ */
+function getAcceleratorDeviceLabel(deviceInfo) {
+  const acc = (deviceInfo && deviceInfo.accelerators) || {};
+  if (acc.coreml) return 'CoreML (ANE/GPU)';
+  if (acc.nnapi) return 'NNAPI (NPU/GPU/DSP auto)';
+  return 'NNAPI/CoreML';
+}
+
+/** Short EP badge shown next to the accelerator row's TOPS value. */
+function getAcceleratorEpBadge(deviceInfo) {
+  const acc = (deviceInfo && deviceInfo.accelerators) || {};
+  if (acc.coreml) return 'CoreML EP';
+  if (acc.nnapi) return 'NNAPI EP';
+  return '';
 }
 
 function getSpeedLabel(ms) {
@@ -590,6 +636,13 @@ watch(step, (newStep) => {
   font-size: 11px;
   color: var(--accent, #5b8def);
   font-weight: 500;
+}
+
+.bench-ep-badge {
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--fg-muted, #6a6a8a);
 }
 
 .bench-available-no-bench {

@@ -5,7 +5,7 @@
 /* global MLGraphBuilder */
 
 import { ensureOrt, isNativeBackend } from './ortSetup.js';
-import { detectNativeAccelerators } from '../native/nativeOrtClient.js';
+import { detectNativeAccelerators, hasAcceleratorEp } from '../native/nativeOrtClient.js';
 
 // 缓存检测结果（包含 benchmark）
 let _detectionCache = null;
@@ -87,14 +87,17 @@ export async function detectNPU() {
 
     // 原生后端：NPU/GPU 可用性由平台加速 EP（NNAPI/CoreML）是否编译进
     // ORT Mobile 库决定；注册失败时 ORT 自动回退 CPU，无需 benchmark。
+    // 注意：NNAPI/CoreML 是单一 EP（内部自动选择加速器），无法在 EP 层
+    // 区分 NPU/GPU/DSP —— npuAvailable/gpuAvailable 表达同一事实。
     if (isNativeBackend()) {
         const acc = await detectNativeAccelerators();
+        const accel = hasAcceleratorEp(acc);
         const result = {
             webnnAvailable: false, // WebNN API 未参与（原生 EP 取而代之）
-            npuAvailable: acc.npu,
-            gpuAvailable: acc.gpu,
+            npuAvailable: accel,
+            gpuAvailable: accel,
             nativeBackend: true,
-            details: acc.npu
+            details: accel
                 ? 'Native accelerator EP available (NNAPI/CoreML)'
                 : 'Native CPU EP (no accelerator in ORT build)',
         };

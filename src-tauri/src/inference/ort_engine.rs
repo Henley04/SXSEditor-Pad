@@ -286,54 +286,47 @@ pub fn is_ready() -> bool {
 /// Device preferences:
 ///   "auto" → NPU → GPU → DSP → CPU priority chain (best available first)
 ///   "cpu"  → CPU only
-///   "gpu"  → NNAPI (Android) / CoreML (iOS) with GPU preference + CPU fallback
-///   "npu"  → NNAPI (Android) / CoreML (iOS) with NPU preference + CPU fallback
-///   "dsp"  → NNAPI with DSP preference (Android only) + CPU fallback
-fn execution_providers_for(device: &str) -> (Vec<ep::ExecutionProviderDispatch>, &'static str) {
+///   "gpu" / "npu" / "dsp" → the platform accelerator EP (NNAPI on Android,
+///   CoreML on iOS) + CPU fallback
+///
+/// IMPORTANT: ORT Mobile exposes exactly one accelerator EP per mobile
+/// platform, and NNAPI/CoreML decide the target hardware (NPU/GPU/DSP/ANE)
+/// internally — there is no EP-level way to pin a specific accelerator type.
+/// The three preferences therefore map to the SAME EP list; the requested
+/// preference is kept only as a diagnostic hint in the returned label. Do
+/// NOT report "npu/gpu/dsp" as separately measured devices.
+fn execution_providers_for(device: &str) -> (Vec<ep::ExecutionProviderDispatch>, String) {
     #[cfg(target_os = "android")]
     {
         match device {
+            // NNAPI EP internally selects the best available accelerator
+            // (NPU first, then GPU, then DSP), and falls back to CPU.
             "auto" => (
-                // Auto priority: NPU → GPU → DSP → CPU.
-                // NNAPI EP internally selects the best available accelerator
-                // (NPU first, then GPU, then DSP), and falls back to CPU.
-                // Listing NNAPI once lets the runtime probe all accelerators.
                 vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
-                "nnapi-auto+cpu",
+                "nnapi+cpu".to_string(),
             ),
-            "npu" => (
+            "npu" | "gpu" | "dsp" => (
                 vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
-                "nnapi-npu+cpu",
+                format!("nnapi+cpu (requested {device}; NNAPI selects hardware)"),
             ),
-            "gpu" => (
-                vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
-                "nnapi-gpu+cpu",
-            ),
-            "dsp" => (
-                // NNAPI will internally route to DSP (Hexagon) when the device
-                // supports it. The same NNAPI EP covers NPU/GPU/DSP — the
-                // device preference is a hint to the NNAPI runtime.
-                vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
-                "nnapi-dsp+cpu",
-            ),
-            _ => (vec![ep::CPU::default().build()], "cpu"),
+            _ => (vec![ep::CPU::default().build()], "cpu".to_string()),
         }
     }
     #[cfg(target_os = "ios")]
     {
         match device {
+            // CoreML EP handles ANE (NPU) / GPU automatically with CPU fallback.
             "auto" | "npu" | "gpu" | "dsp" => (
-                // CoreML EP handles ANE (NPU) / GPU automatically with CPU fallback.
                 vec![ep::CoreML::default().build(), ep::CPU::default().build()],
-                "coreml-auto+cpu",
+                format!("coreml+cpu (requested {device}; CoreML selects hardware)"),
             ),
-            _ => (vec![ep::CPU::default().build()], "cpu"),
+            _ => (vec![ep::CPU::default().build()], "cpu".to_string()),
         }
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let _ = device;
-        (vec![ep::CPU::default().build()], "cpu")
+        (vec![ep::CPU::default().build()], "cpu".to_string())
     }
 }
 
@@ -411,7 +404,7 @@ pub fn load_model(
 
     let entry = Arc::new(SessionEntry {
         session: Mutex::new(session),
-        ep_label: ep_label.to_string(),
+        ep_label: ep_label.clone(),
         model_path: model_path.to_string(),
     });
     engine().lock().sessions.insert(model_id.to_string(), entry);
