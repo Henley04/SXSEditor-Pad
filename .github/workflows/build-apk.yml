@@ -132,6 +132,10 @@ jobs:
           # 此处仅确保 licenses 已接受、sdkmanager 在 PATH 中。
           echo "ANDROID_HOME=$ANDROID_HOME"
           ls "$ANDROID_HOME/cmdline-tools"
+          # 将 ANDROID_HOME 显式写入 env 上下文：workflow 中 Build/Verify 步骤
+          # 以 ${{ env.ANDROID_HOME }} 引用该值，而 env 上下文不包含 runner
+          # 机器级环境变量，不写入会展开为空导致 "Android SDK not found"。
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
@@ -348,6 +352,10 @@ jobs:
           # 此处仅确保 licenses 已接受、sdkmanager 在 PATH 中。
           echo "ANDROID_HOME=$ANDROID_HOME"
           ls "$ANDROID_HOME/cmdline-tools"
+          # 将 ANDROID_HOME 显式写入 env 上下文：workflow 中 Build/Verify 步骤
+          # 以 ${{ env.ANDROID_HOME }} 引用该值，而 env 上下文不包含 runner
+          # 机器级环境变量，不写入会展开为空导致 "Android SDK not found"。
+          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
