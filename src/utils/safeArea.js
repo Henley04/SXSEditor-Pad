@@ -124,8 +124,15 @@ export function applySafeAreaInsets() {
   }
 
   // Re-run on resize and orientation change (with delay for UI to settle)
+  // 审计修复：orientationchange 原先绑定的是匿名箭头函数，cleanup() 里
+  // removeEventListener('orientationchange', update) 引用的是另一个函数对象，
+  // 移除失败 → 每次窗口重挂载都泄漏一个监听器（SPA 路由切换会反复挂载）。
+  // 改为具名处理函数并成对注册/移除。
+  function onOrientationChange() {
+    setTimeout(update, 200);
+  }
   window.addEventListener('resize', update);
-  window.addEventListener('orientationchange', () => setTimeout(update, 200));
+  window.addEventListener('orientationchange', onOrientationChange);
   // Re-apply after theme:changed so subsequent theme switches don't
   // regress the safe-area inset (the theme system fires this event after
   // wiping <html>'s --* and re-injecting theme tokens).

@@ -59,16 +59,33 @@ select,
   min-width: var(--touch-target-min-w);
 }
 
+/* 审计修复：pad.css 通过 common.css 顶部的 @import 先于各窗口样式表
+   （index.css / settings.css / ...）加载。上面的通用规则用的是元素/类选择器
+   （特异性 0-0-1 / 0-1-0），会被窗口样式表里带 ID 的规则
+   （`#toolbar button { min-height: 32px }`，特异性 1-0-1）整体压掉，
+   导致 Pad 上工具栏按钮实际只有 32px 高、远低于 44dp 触摸标准。
+   这里用 `body` 前缀把特异性抬到 1-1-1，保证触摸下限真正生效。 */
+body #toolbar button,
+body #toolbar .toolbar-group button,
+body #toolbar .btn-toolbar {
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min-w);
+}
+
 /* ---------- Toolbar ---------- */
 
-#toolbar {
+/* 审计修复：原先写作 `#toolbar`（特异性 1-0-0），与后加载的 index.css
+   `#toolbar { padding: 0 12px }` 同特异性，被其 padding 简写整体覆盖，
+   padding-top 归零 → Android 状态栏压住工具栏。改用 `body #toolbar`
+   （1-0-1）确保安全区内边距不被重置。 */
+body #toolbar {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: none;
   touch-action: pan-x;
-  /* Keep toolbar clear of the status bar / notch on tablets in landscape. */
+  /* Keep toolbar clear of the status bar / notch on tablets in landscape.
+     只覆盖 padding-top —— 左右内边距各窗口取值不同（12px / --space-5），
+     统一改写会造成视觉回归；左右安全区由 #app 的 padding 统一处理。 */
   padding-top: var(--safe-area-top);
-  padding-left: var(--safe-area-left);
-  padding-right: var(--safe-area-right);
 }
 
 /* Mobile fallback: on Android Tauri edge-to-edge mode, both
@@ -77,14 +94,16 @@ select,
    Use max() with a 28px minimum (standard Android status bar height)
    so the toolbar is always accessible on mobile devices. */
 @media (max-width: 1024px) {
-  #toolbar {
+  body #toolbar {
     padding-top: max(var(--safe-area-top, 0px), 28px);
   }
 }
 
 /* Uniform button sizing: all toolbar buttons get the same height, padding,
    and flex centering so they look aligned regardless of text length. */
-.toolbar-group button {
+/* 审计修复：统一加 `#toolbar ` 前缀（特异性 1-1-1），否则被后加载的
+   index.css `#toolbar button`（1-0-1）覆盖，Pad 上的加大内边距/字号失效。 */
+#toolbar .toolbar-group button {
   padding: 10px 16px;
   font-size: 15px;
   border-radius: 10px;
@@ -99,7 +118,7 @@ select,
 
 /* Extend the clickable area of compact icon buttons via a pseudo-element so
    the visual size stays small but the touch target meets the 44px minimum. */
-.toolbar-group button::before {
+#toolbar .toolbar-group button::before {
   content: "";
   position: absolute;
   inset: -6px;
@@ -118,8 +137,11 @@ select,
    one axis to a non-`visible` value forces the other to compute to `auto`,
    which clips the `#toolbar-overflow-menu` dropdown that extends below
    the toolbar. `flex-wrap: wrap` alone handles multi-row layout. */
-@media (max-width: 900px) {
-  #toolbar {
+@media (max-width: 1180px) {
+  /* Pad 典型宽度（1024/1080/1200）下工具栏内容宽度约 1300px+，原 900px 断点
+     不触发，右侧「歌手市场 / 版本 / 更多」被挤出视口且工具栏不可横向滚动
+     （#main-content 为 overflow: hidden），按钮彻底不可点。抬到 1180px。 */
+  body #toolbar {
     flex-wrap: wrap;
     gap: 4px;
     height: auto;
@@ -128,7 +150,7 @@ select,
   }
   .toolbar-group { flex-wrap: wrap; }
   .toolbar-divider { display: none; }
-  .toolbar-group button {
+  #toolbar .toolbar-group button {
     padding: 8px 12px;
     font-size: 14px;
     /* Allow buttons to shrink and truncate text so they fit on narrow
@@ -142,13 +164,13 @@ select,
   }
   /* Compress fixed-width toolbar inputs so the row still fits without
      horizontal scroll on tablet-class viewports. */
-  #toolbar input[type="number"] { width: 44px; padding: var(--space-1) var(--space-2); }
-  #bpm-input { width: 52px; }
-  #time-display { min-width: 84px; font-size: var(--font-base); padding: var(--space-1) 6px; }
-  #toolbar label { gap: var(--space-1); font-size: var(--font-sm); }
+  body #toolbar input[type="number"] { width: 44px; padding: var(--space-1) var(--space-2); }
+  body #bpm-input { width: 52px; }
+  body #time-display { min-width: 84px; font-size: var(--font-base); padding: var(--space-1) 6px; }
+  body #toolbar label { gap: var(--space-1); font-size: var(--font-sm); }
   /* Reveal the mobile overflow menu on small/touch viewports — surfaces
      Settings / Resource Manager / About (the desktop OS menu entries). */
-  #btn-toolbar-overflow {
+  body #btn-toolbar-overflow {
     display: inline-flex;
     min-width: var(--touch-target-min-w);
     min-height: var(--touch-target-min);
@@ -156,7 +178,7 @@ select,
 }
 
 @media (max-width: 600px) {
-  .toolbar-group button {
+  #toolbar .toolbar-group button {
     padding: 6px 8px;
     font-size: 12px;
     margin: 1px 2px;
@@ -165,12 +187,12 @@ select,
   /* On phones: drop the BPM/time-signature label text so only the input
      remains — saves ~50px of horizontal real estate per group. The numeric
      value is still visible in the #bpm-display-badge inside the timeline. */
-  #toolbar label { font-size: 0; }
-  #toolbar label input[type="number"],
-  #toolbar label input[type="checkbox"] { font-size: 12px; }
-  #toolbar input[type="number"] { width: 38px; }
-  #bpm-input { width: 44px; }
-  #time-display { min-width: 64px; font-size: 11px; padding: 2px 4px; }
+  body #toolbar label { font-size: 0; }
+  body #toolbar label input[type="number"],
+  body #toolbar label input[type="checkbox"] { font-size: 12px; }
+  body #toolbar input[type="number"] { width: 38px; }
+  body #bpm-input { width: 44px; }
+  body #time-display { min-width: 64px; font-size: 11px; padding: 2px 4px; }
   .version-badge { font-size: 10px; padding: 2px 6px; }
 }
 
@@ -182,7 +204,7 @@ select,
    removed actions like autoshift/export/midi-import from the user's reach.
    The overflow menu (three-dot) still surfaces Settings/Resource/About. */
 @media (max-width: 420px) {
-  .toolbar-group button {
+  #toolbar .toolbar-group button {
     padding: 6px;
     font-size: 0;
     margin: 1px;
@@ -190,16 +212,16 @@ select,
     min-height: 32px;
   }
   /* SVG icons stay visible because they have their own width/height attrs. */
-  .toolbar-group button svg,
-  .toolbar-group button .icon {
+  #toolbar .toolbar-group button svg,
+  #toolbar .toolbar-group button .icon {
     width: 18px;
     height: 18px;
     flex-shrink: 0;
   }
   /* Time/BPM displays: shrink to absolute minimum. */
-  #time-display { min-width: 48px; font-size: 10px; padding: 1px 3px; }
-  #toolbar input[type="number"] { width: 32px; }
-  #bpm-input { width: 36px; }
+  body #time-display { min-width: 48px; font-size: 10px; padding: 1px 3px; }
+  body #toolbar input[type="number"] { width: 32px; }
+  body #bpm-input { width: 36px; }
   .version-badge { display: none; }
 }
 
@@ -209,34 +231,35 @@ select,
    dimensions. This is the "enhance touch on pad" counterpart to the
    phone compaction above. */
 @media (min-width: 768px) {
-  .toolbar-group button {
+  #toolbar .toolbar-group button {
     padding: 10px 18px;
     font-size: 16px;
     border-radius: 10px;
     margin: 4px 6px;
   }
-  .btn-toolbar {
+  body .btn-toolbar {
     padding: 10px 18px;
     font-size: 15px;
     min-height: var(--touch-target-pad);
   }
   /* Transport controls get the largest targets for thumb reachability. */
-  .transport button,
-  #btn-play,
-  #btn-stop {
+  body .transport button,
+  body #btn-play,
+  body #btn-pause,
+  body #btn-stop {
     min-height: var(--touch-target-pad);
     min-width: var(--touch-target-pad);
     font-size: 16px;
   }
   /* Sidebar items get taller for stylus / finger touch on tablet. */
-  .sidebar-item {
+  body .sidebar-item {
     min-height: var(--touch-target-pad);
     padding: 12px 18px;
   }
   /* Model download / resource manager buttons get larger touch area. */
-  .btn,
-  .model-btn,
-  .group-action-btn {
+  body .btn,
+  body .model-btn,
+  body .group-action-btn {
     min-height: var(--touch-target-min);
     padding: 8px 16px;
     font-size: 14px;
@@ -252,11 +275,11 @@ select,
    becomes the vertical scroll container so nothing is clipped when the
    soft keyboard or a tall toolbar eats vertical space. */
 @media (max-width: 700px) {
-  #main-content {
+  body #main-content {
     flex-direction: column;
     overflow-y: auto;
   }
-  #singer-panel {
+  body #singer-panel {
     /* Override the desktop flex-basis (240px) so the panel becomes a full-
        width stacked block on phones — gives the timeline the rest of the
        viewport height instead of squeezing both into a 360px-wide column. */
@@ -268,11 +291,11 @@ select,
     border-right: none;
     border-bottom: 1px solid var(--border-subtle);
   }
-  #singer-list {
+  body #singer-list {
     /* already overflow-y: auto above; cap so the timeline stays visible. */
     max-height: calc(38vh - 36px);
   }
-  #fragment-timeline {
+  body #fragment-timeline {
     flex: 1;
     min-height: 50vh;
   }
@@ -315,33 +338,53 @@ input[type="range"]::-moz-range-thumb {
    a canvas that handles its own pointer gestures, scrolling it would fight
    the canvas. `#fragment-canvas-container` likewise stays `overflow: hidden`
    (it clips the absolutely-positioned canvas to its box). */
-#singer-list,
-.settings-content,
-.settings-sidebar,
-.sidebar-nav,
-.theme-editor-panel,
-.fragment-editor-container,
-.audio-preprocess-container,
-.singer-creator-container #left-panel,
-.singer-creator-window #left-panel,
-#singer-creator-app #left-panel,
-#app.singer-creator #left-panel,
-#left-panel,
-.singer-market-container,
-.rm-container,
-.dialog-content {
+/* 审计修复：整组选择器统一加 `body` 前缀（特异性 +1 元素），否则
+   index.css 的 `#singer-list { overflow: hidden }`、settings.css 的
+   `.settings-content { overflow: hidden }` 等后置同特异性规则会把
+   `overflow-y: auto` 覆盖掉 —— 触屏上这些区域完全无法滚动。 */
+body #singer-list,
+body .settings-content,
+body .settings-sidebar,
+body .sidebar-nav,
+body .theme-editor-panel,
+body .fragment-editor-container,
+body .audio-preprocess-container,
+body .singer-creator-container #left-panel,
+body .singer-creator-window #left-panel,
+body #singer-creator-app #left-panel,
+body #app.singer-creator #left-panel,
+body #left-panel,
+body .singer-market-container,
+body .rm-container,
+body .dialog-content {
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
   overflow-y: auto;
 }
 
+/* 审计修复：安全区内边距。此前只有 settings / modelDownload 两个窗口处理了
+   safe-area，分片编辑器、歌手创建、歌手市场、资源管理、音频预处理窗口在
+   Android 全屏（edge-to-edge）下顶部内容被状态栏遮挡。 */
+body .fragment-editor-container,
+body .singer-creator-container,
+body .singer-market-container,
+body .rm-container,
+body .audio-preprocess-container,
+body #splash-root,
+body .dialog-content {
+  padding-top: var(--safe-area-top, 0px);
+  padding-left: var(--safe-area-left, 0px);
+  padding-right: var(--safe-area-right, 0px);
+  box-sizing: border-box;
+}
+
 /* Containers that only need the gesture permission (flex parents whose
    children handle their own scrolling). Kept here so `touch-action: pan-y`
    still applies without forcing `overflow-y: auto` on them. */
-#main-content,
-#singer-panel,
-#fragment-timeline {
+body #main-content,
+body #singer-panel,
+body #fragment-timeline {
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
@@ -512,9 +555,10 @@ button:active,
    above. This ≤720px rule ensures they also get pad-sized targets in
    landscape phones (wide aspect, short height). */
 @media (max-width: 720px) {
-  .transport button,
-  #btn-play,
-  #btn-stop {
+  body .transport button,
+  body #btn-play,
+  body #btn-pause,
+  body #btn-stop {
     min-height: var(--touch-target-pad);
     min-width: var(--touch-target-pad);
     font-size: 16px;
@@ -541,4 +585,40 @@ body { overscroll-behavior-y: contain; }
   .has-tooltip::after {
     display: none;
   }
+}
+
+/* ---------- Touch-only platforms: always show the overflow menu ----------
+   审计修复：原先溢出按钮只在 `@media (max-width: 900px)` 里显示。平板
+   （1024～1280px 常见）宽度大于断点，而移动端又没有桌面那样的 OS 菜单栏，
+   结果是"设置 / 资源管理器 / 关于"在平板上彻底不可达。这里改由
+   MainWindowApp 在触屏平台给 <body> 加 `.platform-touch` 类，
+   与视口宽度解耦 —— 只要没有原生菜单栏就常驻显示。 */
+body.platform-touch #btn-toolbar-overflow {
+  display: inline-flex;
+  min-width: var(--touch-target-min-w);
+  min-height: var(--touch-target-min);
+}
+
+/* 溢出菜单项达到 44dp 触摸下限，图标与文字都易于点中。 */
+body #toolbar-overflow-menu .overflow-item {
+  min-height: var(--touch-target-min);
+  padding: var(--space-3) var(--space-5);
+  font-size: 15px;
+}
+
+/* 分片右键/长按菜单项达到 44dp 触摸下限（原先只有约 28px，手指极易点空）。 */
+body .fragment-ctx-item {
+  min-height: var(--touch-target-min);
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-5);
+  font-size: 15px;
+}
+
+/* 触屏上工具栏下拉菜单可容纳多行时允许滚动，避免项目被裁掉。 */
+body #toolbar-overflow-menu {
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }

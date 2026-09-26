@@ -102,6 +102,12 @@
           <Icon name="info" :size="16" />
           <span>{{ $t('main.about') }}</span>
         </button>
+        <!-- 全屏切换：移动端默认全屏且没有标题栏按钮，用户必须能在应用内
+             退出全屏（否则窗口控制完全不可达）。 -->
+        <button type="button" class="overflow-item" role="menuitem" @click="onToggleFullscreen">
+          <Icon :name="isFullscreen ? 'minimize' : 'maximize'" :size="16" />
+          <span>{{ isFullscreen ? $t('main.exitFullscreen') : $t('main.enterFullscreen') }}</span>
+        </button>
       </div>
     </div>
   </div>
@@ -168,6 +174,56 @@ const cleanups = [];
 const overflowOpen = ref(false);
 const aboutOpen = ref(false);
 const aboutVersion = ref('');
+const isFullscreen = ref(false);
+
+/**
+ * 审计修复：判断是否运行在"无原生菜单栏"的触屏平台。
+ * 原先溢出菜单（设置/资源管理器/关于）只在 `@media (max-width: 900px)`
+ * 下显示，而平板常见宽度是 1024～1280px，于是这些入口在平板上完全不可达。
+ * 现在改为平台判定：移动端 UA，或粗指针 + 支持多点触控（安卓平板 / 触屏
+ * 一体机）——都视为没有 OS 菜单栏，溢出按钮常驻。
+ */
+function detectTouchPlatform() {
+  try {
+    const ua = navigator.userAgent || '';
+    if (/Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua)) return true;
+    const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    return coarse && (navigator.maxTouchPoints || 0) > 0;
+  } catch (_) {
+    return false;
+  }
+}
+
+const isTouchPlatform = detectTouchPlatform();
+
+// Tauri window handle cache (resolved lazily; null when running in a browser).
+let _tauriWindow = null;
+async function getTauriWindow() {
+  if (_tauriWindow) return _tauriWindow;
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    _tauriWindow = getCurrentWindow();
+  } catch (_) {
+    _tauriWindow = null;
+  }
+  return _tauriWindow;
+}
+
+async function onToggleFullscreen() {
+  closeOverflow();
+  const win = await getTauriWindow();
+  if (!win) return;
+  try {
+    let current = false;
+    if (typeof win.isFullscreen === 'function') {
+      current = await win.isFullscreen();
+    }
+    await win.setFullscreen(!current);
+    isFullscreen.value = !current;
+  } catch (_) {
+    // setFullscreen 在部分平台（Android）未实现，静默失败。
+  }
+}
 
 function toggleOverflow() {
   overflowOpen.value = !overflowOpen.value;
@@ -240,18 +296,22 @@ onMounted(async () => {
   // reads the correct CSS variables.
   initWindowTheme(cleanups);
 
-  // Attempt to set the window to fullscreen on mobile to hide the Android
-  // status bar. Tauri 2's `setFullscreen` may not be implemented for Android
-  // (the Android window plugin is incomplete). Try it anyway as a no-op on
-  // platforms that don't support it — the CSS safe-area fallback below
-  // handles the status bar area if fullscreen isn't available.
-  try {
-    const { getCurrentWindow } = await import('@tauri-apps/api/window');
-    const win = getCurrentWindow();
-    await win.setFullscreen(true);
-  } catch (_) {
-    // Tauri API might not be available in dev/web mode or not implemented
-    // for Android. Fall through to CSS/JS safe-area handling.
+  // 审计修复：原先无条件 `setFullscreen(true)`，桌面端也会启动即全屏 —— 全屏
+  // 后标题栏的最小化/最大化/关闭不可用，而应用内又没有任何退出全屏入口，
+  // 窗口控制彻底不可达。现在只在触屏（无标题栏）平台请求全屏，桌面端保持
+  // 装饰窗口；触屏平台则由溢出菜单里的「退出全屏」提供退出路径。
+  if (isTouchPlatform) {
+    document.body.classList.add('platform-touch');
+    try {
+      const win = await getTauriWindow();
+      if (win) {
+        await win.setFullscreen(true);
+        isFullscreen.value = true;
+      }
+    } catch (_) {
+      // Tauri API 在 dev/web 模式或 Android 上可能不可用 —— 回退到 CSS/JS
+      // 安全区处理（不影响功能）。
+    }
   }
 
   // Attempt to lock orientation to landscape on mobile (best-effort —
@@ -289,6 +349,7 @@ onMounted(async () => {
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick);
   document.removeEventListener('keydown', onKeydown);
+  document.body.classList.remove('platform-touch');
   for (const cleanup of cleanups) {
     try { cleanup(); } catch (_) { /* noop */ }
   }

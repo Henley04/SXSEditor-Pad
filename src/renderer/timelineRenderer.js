@@ -23,9 +23,24 @@ export function invalidateGridCache() {
   _gridCacheKey = '';
 }
 
+// 画布像素上限（≈96MB RGBA）。分片拖得很长时 canvasWidth 可达数万 px，
+// 乘 dpr² 会直接把显存/内存打爆（ Chromium 上表现为卡死或白屏 ）。
+// 超出上限时按面积等比降低渲染缩放，保证任意项目规模下都能稳定绘制。
+const MAX_CANVAS_PIXELS = 24e6;
+
+/**
+ * 同步 canvas 的位图尺寸与 CSS 尺寸，返回实际使用的渲染缩放。
+ * 超长内容时缩放会小于 dpr（略糊但不会崩）。
+ */
 function _ensureCanvasSize(canvas, cssW, cssH, dpr) {
-  const pixelW = Math.floor(cssW * dpr);
-  const pixelH = Math.floor(cssH * dpr);
+  const w = Math.max(1, cssW);
+  const h = Math.max(1, cssH);
+  let scale = dpr;
+  if (w * h * dpr * dpr > MAX_CANVAS_PIXELS) {
+    scale = Math.max(0.75, Math.sqrt(MAX_CANVAS_PIXELS / (w * h)));
+  }
+  const pixelW = Math.floor(w * scale);
+  const pixelH = Math.floor(h * scale);
   if (canvas.width !== pixelW || canvas.height !== pixelH) {
     canvas.width = pixelW;
     canvas.height = pixelH;
@@ -36,6 +51,7 @@ function _ensureCanvasSize(canvas, cssW, cssH, dpr) {
     canvas.style.width = expectedStyleW;
     canvas.style.height = expectedStyleH;
   }
+  return scale;
 }
 
 /**
@@ -106,7 +122,9 @@ export function renderFragmentTimeline() {
   const containerHeight = dom.fragmentContainer.clientHeight || contentHeight;
   const canvasHeight = Math.max(contentHeight, containerHeight);
 
-  _ensureCanvasSize(dom.fragmentCanvas, canvasWidth, canvasHeight, dpr);
+  // 审计修复：接收实际渲染缩放（超长内容时会被自动下调），后续所有
+  // setTransform / 离屏缓存都必须用它，而不是直接用 dpr。
+  const renderScale = _ensureCanvasSize(dom.fragmentCanvas, canvasWidth, canvasHeight, dpr);
   // playhead canvas 只覆盖可视区域（container 大小），不再随 fragment canvas 一起放大。
   // 这样拖拽进度条时 clearRect 只需清除 container 大小的区域，
   // 而不是整个 canvasWidth*canvasHeight（分片变长时可达数万 px）。
@@ -116,20 +134,34 @@ export function renderFragmentTimeline() {
 
   syncFragmentScroll();
 
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
 
   const c = getCanvasColors();
   const beatsPerMeasure = state.project.timeSignature ? state.project.timeSignature[0] : 4;
 
   // Build grid cache key from structural inputs
-  const gridCacheKey = `${totalBeats}|${beatWidth}|${canvasHeight}|${singers.length}|${beatsPerMeasure}|${c.bgApp}|${c.gridLineMeasure}|${c.gridLineMajor}|${c.borderSubtle}|${c.bgElevated}|${c.timeText}`;
+  const gridCacheKey = `${totalBeats}|${beatWidth}|${canvasHeight}|${singers.length}|${beatsPerMeasure}|${renderScale}|${c.bgApp}|${c.gridLineMeasure}|${c.gridLineMajor}|${c.borderSubtle}|${c.bgElevated}|${c.timeText}`;
 
   if (_gridCache && _gridCacheKey === gridCacheKey) {
     // Use cached grid layer.
     // 必须显式指定 dw/dh=canvasWidth/canvasHeight：_gridCache 的 intrinsic 尺寸是
-    // canvasWidth*dpr × canvasHeight*dpr（设备像素），而 ctx 已应用 dpr 变换，
-    // 若省略 dw/dh 会按 intrinsic 尺寸绘制，导致整个网格被放大 dpr 倍。
-    ctx.drawImage(_gridCache, 0, 0, canvasWidth, canvasHeight);
+    // canvasWidth*scale × canvasHeight*scale（设备像素），而 ctx 已应用 scale 变换，
+    // 若省略 dw/dh 会按 intrinsic 尺寸绘制，导致整个网格被放大 scale 倍。
+    //
+    // 审计修复（性能）：只把「可视区域」这一块从缓存里 blit 出来。
+    // 拖拽分片时每帧都会走这条路径，整幅 drawImage（宽可达数万 px）是主要
+    // 的填充开销；改为按 scrollX/scrollY 取源矩形后，每帧填充量恒等于视口
+    // 大小，长工程下帧率不再随分片长度下降。
+    const visX = Math.max(0, state.fragmentScrollX);
+    const visY = Math.max(0, state.fragmentScrollY);
+    const visW = Math.max(1, Math.min(canvasWidth - visX, dom.fragmentContainer.clientWidth || canvasWidth));
+    const visH = Math.max(1, Math.min(canvasHeight - visY, containerHeight));
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.drawImage(
+      _gridCache,
+      visX * renderScale, visY * renderScale, visW * renderScale, visH * renderScale,
+      visX, visY, visW, visH
+    );
   } else {
     // Draw static grid background
     ctx.fillStyle = c.bgApp;
@@ -168,15 +200,17 @@ export function renderFragmentTimeline() {
     });
 
     // Cache the grid layer to offscreen canvas
-    const pixelW = Math.floor(canvasWidth * dpr);
-    const pixelH = Math.floor(canvasHeight * dpr);
+    const pixelW = Math.floor(canvasWidth * renderScale);
+    const pixelH = Math.floor(canvasHeight * renderScale);
     if (!_gridCache || _gridCache.width !== pixelW || _gridCache.height !== pixelH) {
       _gridCache = document.createElement('canvas');
       _gridCache.width = pixelW;
       _gridCache.height = pixelH;
     }
     const gridCtx = _gridCache.getContext('2d');
-    gridCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    gridCtx.setTransform(renderScale, 0, 0, renderScale, 0, 0);
+    // 缓存整幅（不只可视区）：滚动/缩放时可以直接按源矩形取任意区域。
+    gridCtx.clearRect(0, 0, canvasWidth, canvasHeight);
     gridCtx.drawImage(dom.fragmentCanvas, 0, 0, canvasWidth, canvasHeight);
     _gridCacheKey = gridCacheKey;
   }

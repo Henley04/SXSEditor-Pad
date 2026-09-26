@@ -124,6 +124,19 @@ function _updatePlayheadVisual(seconds) {
 }
 
 /**
+ * rAF 节流重绘：时间轴改为「只绘制可视区」后，滚动/平移必须重绘才能把新进入
+ * 视野的区域画出来。pointermove 频率高于刷新率，这里合并同一帧内的多次请求。
+ */
+function _scheduleTimelineRender() {
+  if (state.renderPending) return;
+  state.renderPending = true;
+  requestAnimationFrame(() => {
+    state.renderPending = false;
+    renderFragmentTimeline();
+  });
+}
+
+/**
  * 结束拖拽：若拖拽前正在播放，从当前位置恢复播放。
  * 取消 pending rAF 并立即绘制最终位置，确保 mouseup 后 playhead 视觉与播放起点一致。
  */
@@ -216,112 +229,213 @@ dom.btnAudioToMidi.addEventListener('click', handleAudioToMidi);
 // Import MIDI file (multi-track → one singer per track)
 dom.btnImportMidi.addEventListener('click', handleImportMidi);
 
-// Fragment canvas mouse events
-dom.fragmentCanvas.addEventListener('mousedown', (e) => {
-  const rect = dom.fragmentCanvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+// ==================== Fragment canvas pointer / touch interaction ====================
+// 审计修复：原先只监听 mousedown / mousemove / mouseup，在 Pad（触屏）上完全
+// 依赖浏览器合成的兼容鼠标事件，导致：
+//   * 分片拖拽、播放头拖动在 WebView 上经常失灵（无 hover 语义、move 序列被打断）；
+//   * 时间轴只能靠 wheel 滚动/缩放 —— 触屏根本没有 wheel，横向滚动与缩放不可及；
+//   * 右键上下文菜单（删除分片）在触屏上无法触发。
+// 现在改为 Pointer Events（鼠标 / 触摸 / 触控笔统一）+ 双指手势 + 长按菜单 +
+// 单指空白区拖拽平移，桌面鼠标行为保持完全不变。
 
+const PAN_THRESHOLD = 8;    // 空白区拖拽进入"平移视图"的位移阈值(px)
+const LONG_PRESS_MS = 500;  // 触摸长按 → 弹出上下文菜单
+const DOUBLE_TAP_MS = 320;  // 触摸双击 → 打开分片编辑器
+const DOUBLE_TAP_SLOP = 24; // 双击两次落点的最大偏移(px)
+
+// 单指/鼠标交互状态
+let _activePointerId = null;
+let _panStart = null;        // { clientX, clientY, scrollX, scrollY }
+let _isPanning = false;
+let _longPressTimer = 0;
+let _longPressFired = false;
+let _lastTapTime = 0;
+let _lastTapPos = null;
+let _touchGestureActive = false;  // 双指手势进行中 → 暂停单指交互
+let _suppressDblclickUntil = 0;   // 触摸双击已处理时抑制随后的合成 dblclick
+
+function _canvasCoords(e) {
+  const rect = dom.fragmentCanvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function _isOnPlayhead(x) {
+  const playheadX = _getCurrentPlayheadX();
+  return Math.abs(x - playheadX) <= PLAYHEAD_HIT_WIDTH / 2
+    && !!(state.playbackPauseOffset > 0 || state.isPlaying || state.currentAudioData);
+}
+
+/**
+ * 分片命中测试：返回可直接写入 state.dragState 的描述对象，未命中返回 null。
+ * 判定顺序：左边缘(resize-left) → 右边缘(resize-right) → 主体(move)。
+ */
+function _hitTestFragment(x, y) {
   const singers = trackManager.getSingers();
   const fragments = trackManager.getFragments();
   const beatWidth = getBeatWidth();
 
-  // Record click position for click-vs-drag detection
-  _clickStartPos = { x: e.clientX, y: e.clientY };
-
-  // 左键点击播放头三角形手柄或 header 区域 → 开始拖拽设置/跳转播放位置
-  // 优先级高于分片拖拽，避免 playhead 卡在分片边缘时无法拖动
-  // 拖拽期间只更新视觉（不重启 source），mouseup 时若之前在播放则恢复播放。
-  if (e.button === 0) {
-    const canvasH = dom.fragmentCanvas.clientHeight;
-    const playheadX = _getCurrentPlayheadX();
-    const onPlayhead = Math.abs(x - playheadX) <= PLAYHEAD_HIT_WIDTH / 2
-      && (state.playbackPauseOffset > 0 || state.isPlaying || state.currentAudioData);
-    const onHeader = y <= HEADER_HEIGHT;
-    if (onPlayhead || onHeader) {
-      const newSeconds = _canvasXToClampedSeconds(x);
-      if (state.isPlaying) {
-        _wasPlayingBeforeDrag = true;
-        pausePlayback();
-      } else {
-        _wasPlayingBeforeDrag = false;
-      }
-      _isPlayheadDragging = true;
-      _updatePlayheadVisual(newSeconds);
-      _hidePlayheadTooltip();
-      return;
-    }
-  }
-
   for (let i = 0; i < singers.length; i++) {
     const singerY = i * SINGER_ROW_HEIGHT + HEADER_HEIGHT;
+    if (y < singerY || y >= singerY + SINGER_ROW_HEIGHT) continue;
 
-    if (y >= singerY && y < singerY + SINGER_ROW_HEIGHT) {
-      const singerId = singers[i].id;
-      const singerFragments = fragments.filter(f => f.singerId === singerId);
+    const singerId = singers[i].id;
+    const singerFragments = fragments.filter(f => f.singerId === singerId);
 
-      for (const fragment of singerFragments) {
-        const fragX = fragment.startTime * beatWidth;
-        const fragWidth = fragment.duration * beatWidth;
+    for (const fragment of singerFragments) {
+      const fragX = fragment.startTime * beatWidth;
+      const fragWidth = fragment.duration * beatWidth;
 
-        if (x >= fragX - 4 && x <= fragX + 4) {
-          state.dragState = { type: 'resize-left', fragment, startX: x, originalStart: fragment.startTime, originalDuration: fragment.duration };
-          state.fragmentDragSnapshot = { startTime: fragment.startTime, duration: fragment.duration };
-          return;
-        }
-        if (x >= fragX + fragWidth - 4 && x <= fragX + fragWidth + 4) {
-          state.dragState = { type: 'resize-right', fragment, startX: x, originalStart: fragment.startTime, originalDuration: fragment.duration };
-          state.fragmentDragSnapshot = { startTime: fragment.startTime, duration: fragment.duration };
-          return;
-        }
-        if (x >= fragX && x <= fragX + fragWidth) {
-          state.dragState = { type: 'move', fragment, startX: x, startY: y, originalStart: fragment.startTime, originalSingerId: fragment.singerId };
-          state.fragmentDragSnapshot = { startTime: fragment.startTime, duration: fragment.duration, singerId: fragment.singerId };
-          return;
-        }
+      if (x >= fragX - 4 && x <= fragX + 4) {
+        return { type: 'resize-left', fragment, startX: x, originalStart: fragment.startTime, originalDuration: fragment.duration };
+      }
+      if (x >= fragX + fragWidth - 4 && x <= fragX + fragWidth + 4) {
+        return { type: 'resize-right', fragment, startX: x, originalStart: fragment.startTime, originalDuration: fragment.duration };
+      }
+      if (x >= fragX && x <= fragX + fragWidth) {
+        return { type: 'move', fragment, startX: x, startY: y, originalStart: fragment.startTime, originalSingerId: fragment.singerId };
       }
     }
   }
+  return null;
+}
 
-  // Clicked on empty area → deselect fragment
-  state.selectedFragmentId = null;
-  renderFragmentTimeline();
-});
+function _beginFragmentDrag(hit) {
+  state.dragState = hit;
+  const f = hit.fragment;
+  state.fragmentDragSnapshot = hit.type === 'move'
+    ? { startTime: f.startTime, duration: f.duration, singerId: f.singerId }
+    : { startTime: f.startTime, duration: f.duration };
+}
 
-dom.fragmentCanvas.addEventListener('mousemove', (e) => {
-  // 拖拽 playhead 优先级最高：只更新视觉（不重启 source，避免卡顿）
-  if (_isPlayheadDragging) {
-    const x = _mouseToCanvasX(e);
+function _cancelLongPress() {
+  if (_longPressTimer) {
+    clearTimeout(_longPressTimer);
+    _longPressTimer = 0;
+  }
+}
+
+/**
+ * 触摸长按 → 上下文菜单（替代触屏上不可用的右键菜单）。
+ */
+function _scheduleLongPress(clientX, clientY, fragment) {
+  _cancelLongPress();
+  _longPressTimer = setTimeout(() => {
+    _longPressTimer = 0;
+    _longPressFired = true;
+    // 取消进行中的拖拽 / 平移，避免菜单弹出后手指抬起仍改动分片
+    state.dragState = null;
+    state.fragmentDragSnapshot = null;
+    _isPanning = false;
+    _panStart = null;
+    state.selectedFragmentId = fragment.id;
+    renderFragmentTimeline();
+    showFragmentContextMenu(clientX, clientY, fragment);
+  }, LONG_PRESS_MS);
+}
+
+function _resetPointerInteraction() {
+  _activePointerId = null;
+  _panStart = null;
+  _isPanning = false;
+  _clickStartPos = null;
+}
+
+function onPointerDown(e) {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  if (_touchGestureActive) return;   // 双指手势接管时忽略单指事件
+
+  const { x, y } = _canvasCoords(e);
+  _clickStartPos = { x: e.clientX, y: e.clientY };
+  _activePointerId = e.pointerId;
+  _isPanning = false;
+  _longPressFired = false;
+  _panStart = null;
+  try { dom.fragmentCanvas.setPointerCapture(e.pointerId); } catch (_) { /* 不支持时忽略 */ }
+
+  // 1) 播放头手柄 / 顶部时间标尺 → 拖拽定位
+  if (_isOnPlayhead(x) || y <= HEADER_HEIGHT) {
     const newSeconds = _canvasXToClampedSeconds(x);
+    if (state.isPlaying) {
+      _wasPlayingBeforeDrag = true;
+      pausePlayback();
+    } else {
+      _wasPlayingBeforeDrag = false;
+    }
+    _isPlayheadDragging = true;
     _updatePlayheadVisual(newSeconds);
+    _hidePlayheadTooltip();
+    return;
+  }
+
+  // 2) 分片 / 边缘
+  const hit = _hitTestFragment(x, y);
+  if (hit) {
+    _beginFragmentDrag(hit);
+    if (e.pointerType !== 'mouse') {
+      _scheduleLongPress(e.clientX, e.clientY, hit.fragment);
+    }
+    return;
+  }
+
+  // 3) 空白区：预备平移（触屏可拖时间轴，鼠标按住拖同样可用）
+  _panStart = {
+    clientX: e.clientX,
+    clientY: e.clientY,
+    scrollX: state.fragmentScrollX,
+    scrollY: state.fragmentScrollY,
+  };
+}
+
+function onPointerMove(e) {
+  if (_activePointerId !== null && e.pointerId !== _activePointerId) return;
+  const { x, y } = _canvasCoords(e);
+
+  // 播放头拖拽优先级最高：只更新视觉（不重启 source，避免卡顿）
+  if (_isPlayheadDragging) {
+    const seconds = _canvasXToClampedSeconds(x);
+    _updatePlayheadVisual(seconds);
     return;
   }
 
   if (!state.dragState) {
-    // 鼠标悬停在 playhead 上时：显示 ew-resize 光标 + 时间 tooltip
-    const rect = dom.fragmentCanvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const canvasH = dom.fragmentCanvas.clientHeight;
-    const playheadX = _getCurrentPlayheadX();
-    const onPlayhead = Math.abs(x - playheadX) <= PLAYHEAD_HIT_WIDTH / 2
-      && (state.playbackPauseOffset > 0 || state.isPlaying || state.currentAudioData);
-    const onHeader = y <= HEADER_HEIGHT;
-    if (onPlayhead || onHeader) {
-      dom.fragmentCanvas.style.cursor = 'ew-resize';
-      const tipSeconds = _canvasXToClampedSeconds(x);
-      _showPlayheadTooltip(e.clientX, e.clientY, tipSeconds);
-      return;
-    } else {
-      dom.fragmentCanvas.style.cursor = 'default';
-      _hidePlayheadTooltip();
+    // 空白区拖拽 → 平移视图（触屏上唯一能滚动时间轴的方式之一）
+    if (_panStart) {
+      const dx = e.clientX - _panStart.clientX;
+      const dy = e.clientY - _panStart.clientY;
+      if (!_isPanning && Math.abs(dx) + Math.abs(dy) > PAN_THRESHOLD) {
+        _isPanning = true;
+        _cancelLongPress();
+      }
+      if (_isPanning) {
+        state.fragmentScrollX = _panStart.scrollX - dx;
+        state.fragmentScrollY = _panStart.scrollY - dy;
+        _scheduleTimelineRender();
+        _hidePlayheadTooltip();
+        return;
+      }
+    }
+
+    // 悬停反馈仅对鼠标/触控笔有意义（触屏无 hover）
+    if (e.pointerType === 'mouse') {
+      if (_isOnPlayhead(x) || y <= HEADER_HEIGHT) {
+        dom.fragmentCanvas.style.cursor = 'ew-resize';
+        const tipSeconds = _canvasXToClampedSeconds(x);
+        _showPlayheadTooltip(e.clientX, e.clientY, tipSeconds);
+      } else {
+        dom.fragmentCanvas.style.cursor = 'default';
+        _hidePlayheadTooltip();
+      }
     }
     return;
   }
 
-  const rect = dom.fragmentCanvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  // 手指/鼠标移动超过阈值 → 判定为拖拽，取消长按菜单
+  if (_clickStartPos && _longPressTimer) {
+    if (Math.abs(e.clientX - _clickStartPos.x) + Math.abs(e.clientY - _clickStartPos.y) > PAN_THRESHOLD) {
+      _cancelLongPress();
+    }
+  }
+
   const beatWidth = getBeatWidth();
   const dx = (x - state.dragState.startX) / beatWidth;
 
@@ -329,7 +443,7 @@ dom.fragmentCanvas.addEventListener('mousemove', (e) => {
     const newStart = Math.max(0, state.dragState.originalStart + dx);
     const updateData = { startTime: Math.round(newStart * 4) / 4 };
 
-    // Check if mouse moved to another singer track row
+    // 拖到其它歌手轨道行 → 换轨
     const singers = trackManager.getSingers();
     for (let i = 0; i < singers.length; i++) {
       const singerY = i * SINGER_ROW_HEIGHT + HEADER_HEIGHT;
@@ -374,99 +488,212 @@ dom.fragmentCanvas.addEventListener('mousemove', (e) => {
       state.renderPending = false;
     });
   }
-});
+}
 
-dom.fragmentCanvas.addEventListener('mouseup', (e) => {
-  // 结束 playhead 拖拽：若拖拽前正在播放，从新位置恢复播放
+function onPointerUp(e) {
+  if (_activePointerId !== null && e.pointerId !== _activePointerId) return;
+  _cancelLongPress();
+  try {
+    if (e.pointerId != null && dom.fragmentCanvas.hasPointerCapture?.(e.pointerId)) {
+      dom.fragmentCanvas.releasePointerCapture(e.pointerId);
+    }
+  } catch (_) { /* noop */ }
+
+  const wasPanning = _isPanning;
+  const wasLongPress = _longPressFired;
+  const clickStart = _clickStartPos;
+  _resetPointerInteraction();
+
   if (_isPlayheadDragging) {
     _endPlayheadDrag();
     return;
   }
+  // 平移 / 长按菜单已消费本次手势，不再做选中或落历史
+  if (wasPanning || wasLongPress) return;
 
-  // Check if this was a click (no significant movement) vs drag
-  if (_clickStartPos && state.dragState) {
-    const dx = e.clientX - _clickStartPos.x;
-    const dy = e.clientY - _clickStartPos.y;
-    if (Math.abs(dx) < CLICK_THRESHOLD && Math.abs(dy) < CLICK_THRESHOLD) {
-      // It's a click — select the fragment
-      const fragment = state.dragState.fragment;
-      state.selectedFragmentId = fragment.id;
-      state.dragState = null;
-      state.fragmentDragSnapshot = null;
-      _clickStartPos = null;
+  if (clickStart) {
+    const dx = e.clientX - clickStart.x;
+    const dy = e.clientY - clickStart.y;
+    const isClick = Math.abs(dx) < CLICK_THRESHOLD && Math.abs(dy) < CLICK_THRESHOLD;
+    const { x, y } = _canvasCoords(e);
+
+    if (isClick && y > HEADER_HEIGHT) {
+      const hit = _hitTestFragment(x, y);
+      if (hit) {
+        state.selectedFragmentId = hit.fragment.id;
+        renderFragmentTimeline();
+
+        // 触摸双击 → 打开分片编辑器（鼠标走原生 dblclick）
+        if (e.pointerType !== 'mouse') {
+          const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+          if (_lastTapPos && now - _lastTapTime < DOUBLE_TAP_MS
+              && Math.hypot(e.clientX - _lastTapPos.x, e.clientY - _lastTapPos.y) < DOUBLE_TAP_SLOP) {
+            _lastTapTime = 0;
+            _lastTapPos = null;
+            // 抑制 WebView 在双击后补发的合成 dblclick，避免打开两个窗口
+            _suppressDblclickUntil = now + 600;
+            openFragmentEditor(hit.fragment);
+            return;
+          }
+          _lastTapTime = now;
+          _lastTapPos = { x: e.clientX, y: e.clientY };
+        }
+        return;
+      }
+      // 空白点击 → 取消选择
+      state.selectedFragmentId = null;
       renderFragmentTimeline();
       return;
     }
   }
-  _clickStartPos = null;
+
   finishDrag();
-});
-dom.fragmentCanvas.addEventListener('mouseleave', () => {
-  _clickStartPos = null;
+}
+
+function onPointerCancel() {
+  _cancelLongPress();
+  _resetPointerInteraction();
+  if (_isPlayheadDragging) _endPlayheadDrag();
+  finishDrag();
+}
+
+dom.fragmentCanvas.addEventListener('pointerdown', onPointerDown);
+dom.fragmentCanvas.addEventListener('pointermove', onPointerMove);
+dom.fragmentCanvas.addEventListener('pointerup', onPointerUp);
+dom.fragmentCanvas.addEventListener('pointercancel', onPointerCancel);
+dom.fragmentCanvas.addEventListener('pointerleave', (e) => {
+  if (e.pointerType !== 'mouse') return;   // 触屏抬手会派发 leave，交给 pointerup
+  _resetPointerInteraction();
   _endPlayheadDrag();
   finishDrag();
 });
 
-dom.fragmentCanvas.addEventListener('dblclick', (e) => {
-  const rect = dom.fragmentCanvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+// ==================== Two-finger pan / pinch zoom (touch) ====================
+// canvas 上 `touch-action: none`，浏览器不会代管手势；这里把双指手势翻译成
+// 横向/纵向滚动与 X 轴缩放，等价于桌面上的 wheel / ctrl+wheel。
+const _gestureTarget = dom.fragmentContainer || dom.fragmentCanvas;
+let _twoFinger = null;
+let _touchRaf = 0;
+let _pendingTouchEvent = null;
 
-  const singers = trackManager.getSingers();
-  const fragments = trackManager.getFragments();
-  const beatWidth = getBeatWidth();
-
-  for (let i = 0; i < singers.length; i++) {
-    const singerY = i * SINGER_ROW_HEIGHT + HEADER_HEIGHT;
-
-    if (y >= singerY && y < singerY + SINGER_ROW_HEIGHT) {
-      const singerFragments = fragments.filter(f => f.singerId === singers[i].id);
-
-      for (const fragment of singerFragments) {
-        const fragX = fragment.startTime * beatWidth;
-        const fragWidth = fragment.duration * beatWidth;
-
-        if (x >= fragX && x <= fragX + fragWidth) {
-          openFragmentEditor(fragment);
-          return;
-        }
-      }
-    }
+function _resetTouchGesture() {
+  _touchGestureActive = false;
+  _twoFinger = null;
+  _pendingTouchEvent = null;
+  if (_touchRaf) {
+    cancelAnimationFrame(_touchRaf);
+    _touchRaf = 0;
   }
+}
+
+function _applyTwoFingerGesture() {
+  _touchRaf = 0;
+  const ev = _pendingTouchEvent;
+  _pendingTouchEvent = null;
+  if (!ev || !_twoFinger || ev.touches.length !== 2) return;
+
+  const t1 = ev.touches[0];
+  const t2 = ev.touches[1];
+  const newDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+  const midX = (t1.clientX + t2.clientX) / 2;
+  const midY = (t1.clientY + t2.clientY) / 2;
+  const g = _twoFinger;
+
+  // --- 捏合缩放（相对上一帧增量更新基准，避免持续放大/缩小漂移）---
+  const zoomRatio = g.dist > 0 ? newDist / g.dist : 1;
+  if (Math.abs(zoomRatio - 1) > 0.01) {
+    const containerRect = dom.fragmentContainer.getBoundingClientRect();
+    const anchorX = g.midX - containerRect.left;
+    const oldBeatWidth = getBeatWidth();
+    const anchorBeats = (anchorX + state.fragmentScrollX) / oldBeatWidth;
+    const nextZoom = Math.max(0.25, Math.min(4, g.zoomX * zoomRatio));
+    state.fragmentZoomX = nextZoom;
+    const newBeatWidth = getBeatWidth();
+    state.fragmentScrollX = anchorBeats * newBeatWidth - anchorX;
+    syncFragmentScroll();
+    renderFragmentTimeline();
+    g.zoomX = nextZoom;
+    g.dist = newDist;
+  }
+
+  // --- 双指平移 ---
+  const dx = midX - g.midX;
+  const dy = midY - g.midY;
+  if (dx !== 0 || dy !== 0) {
+    state.fragmentScrollX = g.scrollX - dx;
+    state.fragmentScrollY = g.scrollY - dy;
+    // 时间轴按可视区绘制，滚动后必须重绘（已在 rAF 内，直接同步绘制）
+    renderFragmentTimeline();
+  }
+  // 增量推进基准，支持"缩放+平移"混合手势
+  g.midX = midX;
+  g.midY = midY;
+  g.scrollX = state.fragmentScrollX;
+  g.scrollY = state.fragmentScrollY;
+}
+
+_gestureTarget.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 2) return;
+  _touchGestureActive = true;
+  // 取消单指进行中的操作，避免与双指手势打架
+  _cancelLongPress();
+  if (_isPlayheadDragging) _endPlayheadDrag();
+  state.dragState = null;
+  state.fragmentDragSnapshot = null;
+  _isPanning = false;
+  _panStart = null;
+
+  const t1 = e.touches[0];
+  const t2 = e.touches[1];
+  _twoFinger = {
+    dist: Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY),
+    midX: (t1.clientX + t2.clientX) / 2,
+    midY: (t1.clientY + t2.clientY) / 2,
+    scrollX: state.fragmentScrollX,
+    scrollY: state.fragmentScrollY,
+    zoomX: state.fragmentZoomX,
+  };
+}, { passive: false });
+
+_gestureTarget.addEventListener('touchmove', (e) => {
+  if (e.touches.length !== 2 || !_twoFinger) return;
+  e.preventDefault();
+  _pendingTouchEvent = e;
+  if (_touchRaf) return;
+  _touchRaf = requestAnimationFrame(_applyTwoFingerGesture);
+}, { passive: false });
+
+_gestureTarget.addEventListener('touchend', (e) => {
+  if (e.touches.length < 2) _resetTouchGesture();
+}, { passive: false });
+
+// 系统手势打断（来电/下拉通知等）时必须复位，否则 _touchGestureActive 常驻
+// 会让后续所有单指交互失效。
+_gestureTarget.addEventListener('touchcancel', () => {
+  _resetTouchGesture();
+}, { passive: false });
+
+dom.fragmentCanvas.addEventListener('dblclick', (e) => {
+  // 触摸双击已在 pointerup 里处理并打开编辑器；这里忽略随后补发的合成
+  // dblclick，否则同一次双击会打开两个分片编辑窗口。
+  const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  if (now < _suppressDblclickUntil) return;
+
+  const { x, y } = _canvasCoords(e);
+  const hit = _hitTestFragment(x, y);
+  if (hit) openFragmentEditor(hit.fragment);
 });
 
 dom.fragmentCanvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
-  const rect = dom.fragmentCanvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-
-  const singers = trackManager.getSingers();
-  const fragments = trackManager.getFragments();
-  const beatWidth = getBeatWidth();
-
-  for (let i = 0; i < singers.length; i++) {
-    const singerY = i * SINGER_ROW_HEIGHT + HEADER_HEIGHT;
-
-    if (y >= singerY && y < singerY + SINGER_ROW_HEIGHT) {
-      const singerFragments = fragments.filter(f => f.singerId === singers[i].id);
-
-      for (const fragment of singerFragments) {
-        const fragX = fragment.startTime * beatWidth;
-        const fragWidth = fragment.duration * beatWidth;
-
-        if (x >= fragX && x <= fragX + fragWidth) {
-          // Select the fragment first
-          state.selectedFragmentId = fragment.id;
-          renderFragmentTimeline();
-
-          // Show context menu
-          showFragmentContextMenu(e.clientX, e.clientY, fragment);
-          return;
-        }
-      }
-    }
-  }
+  const { x, y } = _canvasCoords(e);
+  const hit = _hitTestFragment(x, y);
+  if (!hit) return;
+  // Select the fragment first
+  state.selectedFragmentId = hit.fragment.id;
+  renderFragmentTimeline();
+  // Show context menu（触屏走 pointerdown 的长按分支）
+  showFragmentContextMenu(e.clientX, e.clientY, hit.fragment);
 });
 
 // Wheel events: rAF-coalesced to avoid layout thrash on high-frequency trackpad scroll.
@@ -499,13 +726,16 @@ function _processPendingWheel() {
       renderFragmentTimeline();
     } else if (e.shiftKey) {
       state.fragmentScrollX += e.deltaY;
+      // 审计修复：时间轴现在按可视区绘制（见 timelineRenderer 的 grid blit），
+      // 滚动后新进入视野的区域必须重绘，只 syncFragmentScroll() 会留下空白。
+      renderFragmentTimeline();
     } else {
       state.fragmentScrollY += e.deltaY;
+      renderFragmentTimeline();
     }
-    syncFragmentScroll();
   } else if (target === dom.singerListEl) {
     state.fragmentScrollY += e.deltaY;
-    syncFragmentScroll();
+    renderFragmentTimeline();
   }
 }
 
@@ -577,8 +807,16 @@ if (window.electronAPI?.onMainMenuSaveAsRequest) {
 
 // ---- Fragment context menu ----
 let _fragmentCtxMenu = null;
+let _ctxCloseHandler = null;
+// 菜单弹出时刻：触屏长按抬起后浏览器仍会补发一次 click，若不忽略会立刻把
+// 刚弹出的菜单关掉（"长按没反应"）。300ms 内的 click 一律忽略。
+let _ctxMenuOpenedAt = 0;
 
 function hideFragmentContextMenu() {
+  if (_ctxCloseHandler) {
+    document.removeEventListener('click', _ctxCloseHandler);
+    _ctxCloseHandler = null;
+  }
   if (_fragmentCtxMenu) {
     _fragmentCtxMenu.remove();
     _fragmentCtxMenu = null;
@@ -590,8 +828,11 @@ function showFragmentContextMenu(clientX, clientY, fragment) {
 
   const menu = document.createElement('div');
   menu.className = 'fragment-ctx-menu';
+  // 先按手指/指针落点定位，插入 DOM 后再按视口边界收敛 —— 避免在屏幕边缘
+  // 长按（触屏上很常见）时菜单被裁到视口外、删除项点不到。
   menu.style.left = clientX + 'px';
   menu.style.top = clientY + 'px';
+  menu.style.visibility = 'hidden';
 
   const deleteItem = document.createElement('div');
   deleteItem.className = 'fragment-ctx-item fragment-ctx-danger';
@@ -605,16 +846,31 @@ function showFragmentContextMenu(clientX, clientY, fragment) {
 
   menu.appendChild(deleteItem);
   document.body.appendChild(menu);
+
+  // 视口边界收敛（触屏边缘长按时不至于把菜单顶出屏幕）
+  const rect = menu.getBoundingClientRect();
+  const maxLeft = Math.max(0, window.innerWidth - rect.width - 8);
+  const maxTop = Math.max(0, window.innerHeight - rect.height - 8);
+  menu.style.left = Math.max(8, Math.min(clientX, maxLeft)) + 'px';
+  menu.style.top = Math.max(8, Math.min(clientY, maxTop)) + 'px';
+  menu.style.visibility = 'visible';
+
   _fragmentCtxMenu = menu;
+  _ctxMenuOpenedAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
 
   // Close on click outside
   const closeHandler = (e) => {
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (now - _ctxMenuOpenedAt < 300) return;   // 忽略打开手势自身补发的 click
     if (!menu.contains(e.target)) {
       hideFragmentContextMenu();
-      document.removeEventListener('click', closeHandler);
     }
   };
-  setTimeout(() => document.addEventListener('click', closeHandler), 0);
+  _ctxCloseHandler = closeHandler;
+  setTimeout(() => {
+    // 菜单可能已被关闭（例如又触发了一次长按），此时不必再挂监听。
+    if (_ctxCloseHandler === closeHandler) document.addEventListener('click', closeHandler);
+  }, 0);
 }
 
 // ---- Fragment deletion ----

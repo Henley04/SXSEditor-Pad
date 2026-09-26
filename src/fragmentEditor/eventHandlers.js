@@ -2762,6 +2762,19 @@ export function setupEventListeners() {
     }
   }, { passive: false });
 
+  // 审计修复：手势状态复位集中在一处 —— 原先只在 touchend 清理
+  // _twoFingerStart，既漏掉 touchcancel（系统手势/来电打断后状态残留，
+  // 之后所有 touchmove 都被 preventDefault 吞掉，画布"卡死"），也漏掉
+  // _pendingTouch（rAF 里可能拿到过期事件）。
+  function _resetTwoFingerGesture() {
+    _twoFingerStart = null;
+    _pendingTouch = null;
+    if (_touchRaf) {
+      cancelAnimationFrame(_touchRaf);
+      _touchRaf = 0;
+    }
+  }
+
   canvas.addEventListener('touchmove', (e) => {
     if (e.touches.length !== 2 || !_twoFingerStart) return;
     e.preventDefault();
@@ -2772,7 +2785,7 @@ export function setupEventListeners() {
       _touchRaf = 0;
       const ev = _pendingTouch;
       _pendingTouch = null;
-      if (!ev || !_twoFingerStart) return;
+      if (!ev || !_twoFingerStart || ev.touches.length !== 2) return;
 
       const t1 = ev.touches[0];
       const t2 = ev.touches[1];
@@ -2781,44 +2794,46 @@ export function setupEventListeners() {
       const newDist = Math.hypot(dx, dy);
       const midX = (t1.clientX + t2.clientX) / 2;
       const midY = (t1.clientY + t2.clientY) / 2;
+      const g = _twoFingerStart;
 
-      // Pinch zoom: if the distance changed significantly, treat as zoom
-      const distRatio = newDist / _twoFingerStart.dist;
-      if (Math.abs(distRatio - 1) > 0.02) {
-        // Pinch zoom — mirror the wheel zoom logic
+      // --- 捏合缩放：增量更新基准，避免"按起始距离"计算导致的持续放大 ---
+      const zoomRatio = g.dist > 0 ? newDist / g.dist : 1;
+      if (Math.abs(zoomRatio - 1) > 0.01) {
         const oldZoomX = getZoomX();
-        const newZoomX = Math.max(0.25, Math.min(4, oldZoomX * distRatio));
-        setZoomX(newZoomX);
-
-        // Zoom toward the pinch center (like the wheel handler uses mouse pos)
+        const newZoomX = Math.max(0.25, Math.min(4, oldZoomX * zoomRatio));
+        // 以双指中点为锚点，保证该拍在缩放后仍停在原处
         const rect = canvas.getBoundingClientRect();
-        const pos = { x: _twoFingerStart.midX - rect.left, y: _twoFingerStart.midY - rect.top };
-        // Compute mouseBeats using OLD zoom/scroll (same formula as wheel handler)
-        const mouseBeats = (pos.x + _twoFingerStart.scrollX) / (BEAT_WIDTH * oldZoomX);
-        const newScrollX = mouseBeats * BEAT_WIDTH * newZoomX - pos.x;
-        setScrollX(Math.max(0, newScrollX));
-      } else {
-        // Two-finger pan — scroll both X and Y
-        const deltaX = midX - _twoFingerStart.midX;
-        const deltaY = midY - _twoFingerStart.midY;
-
-        setScrollX(Math.max(0, _twoFingerStart.scrollX - deltaX));
-        const maxScrollY = Math.max(0, 128 * NOTE_HEIGHT + HEADER_HEIGHT + PARAM_CURVE_HEIGHT - canvas.parentElement.clientHeight);
-        setScrollY(Math.max(0, Math.min(maxScrollY, _twoFingerStart.scrollY - deltaY)));
+        const anchorX = g.midX - rect.left;
+        const anchorBeats = (anchorX + getScrollX()) / (BEAT_WIDTH * oldZoomX);
+        setZoomX(newZoomX);
+        setScrollX(Math.max(0, anchorBeats * BEAT_WIDTH * newZoomX - anchorX));
+        g.dist = newDist;
+        g.zoomX = newZoomX;
       }
+
+      // --- 双指平移（与缩放可同时进行，增量推进基准）---
+      const deltaX = midX - g.midX;
+      const deltaY = midY - g.midY;
+      if (deltaX !== 0 || deltaY !== 0) {
+        const maxScrollY = Math.max(0, 128 * NOTE_HEIGHT + HEADER_HEIGHT + PARAM_CURVE_HEIGHT - canvas.parentElement.clientHeight);
+        setScrollX(Math.max(0, g.scrollX - deltaX));
+        setScrollY(Math.max(0, Math.min(maxScrollY, g.scrollY - deltaY)));
+      }
+      g.midX = midX;
+      g.midY = midY;
+      g.scrollX = getScrollX();
+      g.scrollY = getScrollY();
 
       render();
     });
   }, { passive: false });
 
   canvas.addEventListener('touchend', (e) => {
-    if (e.touches.length < 2) {
-      _twoFingerStart = null;
-      if (_touchRaf) {
-        cancelAnimationFrame(_touchRaf);
-        _touchRaf = 0;
-      }
-    }
+    if (e.touches.length < 2) _resetTwoFingerGesture();
+  }, { passive: false });
+
+  canvas.addEventListener('touchcancel', () => {
+    _resetTwoFingerGesture();
   }, { passive: false });
 
   _setupPitchContextMenuListeners();

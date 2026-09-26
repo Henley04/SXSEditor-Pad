@@ -213,7 +213,10 @@ export default {
     aboutTitle: 'About SXSEditor',
     aboutVersion: 'Version',
     aboutDescription: 'AI Singing Voice Synthesis Workbench based on ONNX Runtime / DirectML',
-    closeAbout: 'Close'
+    closeAbout: 'Close',
+    // Fullscreen toggle (touch platforms have no window title-bar controls)
+    enterFullscreen: 'Enter Fullscreen',
+    exitFullscreen: 'Exit Fullscreen'
   },
   fragment: {
     title: 'Fragment Editor',

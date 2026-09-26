@@ -19,7 +19,6 @@
         "minWidth": 768,
         "minHeight": 512,
         "resizable": true,
-        "fullscreen": true,
         "maximized": true,
         "decorations": true
       }

@@ -213,7 +213,10 @@ export default {
     aboutTitle: '关于 SXSEditor',
     aboutVersion: '版本',
     aboutDescription: '基于 ONNX Runtime / DirectML 的 AI 歌声合成工作台',
-    closeAbout: '关闭'
+    closeAbout: '关闭',
+    // 全屏切换（触屏平台没有窗口标题栏按钮，菜单里必须能退出全屏）
+    enterFullscreen: '进入全屏',
+    exitFullscreen: '退出全屏'
   },
   fragment: {
     title: '分片编辑',
