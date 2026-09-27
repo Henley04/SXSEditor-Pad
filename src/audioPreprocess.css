@@ -288,7 +288,10 @@ html, body {
 
 /* ==================== Responsive ==================== */
 
-/* Phone: compact toolbar buttons. */
+/* Phone: compact toolbar buttons. Buttons keep icon + label; the toolbar
+   and groups wrap to extra rows instead of clipping the label
+   (overflow:hidden + min-width:0 let flex shrink buttons down to bare
+   icons, which made "RMVPE提取F0" / "提取MIDI" indistinguishable). */
 @media (max-width: 600px) {
   #toolbar {
     height: auto;
@@ -296,13 +299,13 @@ html, body {
     flex-wrap: wrap;
     padding: 0 6px;
   }
+  .toolbar-group {
+    flex-wrap: wrap;
+  }
   .btn-toolbar {
     padding: 4px 8px;
     font-size: 12px;
-    flex-shrink: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   #page-title {
     font-size: var(--font-sm);
