@@ -559,3 +559,80 @@ jobs:
           artifacts: "release-assets/*.apk"
           makeLatest: true
           generateReleaseNotes: true
+
+  nightly:
+    name: Publish Nightly Pre-release
+    # Every push to master publishes/refreshes the rolling `nightly` release
+    # (marked as prerelease). Formal releases remain tag/dispatch-driven.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [build-web, build-apk, build-universal]
+    runs-on: ubuntu-latest
+    # Serialize refreshes so two rapid pushes don't race on delete/recreate.
+    concurrency:
+      group: nightly-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all APKs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: SXSEditor-Pad-*.apk
+          path: apks/
+          merge-multiple: true
+
+      - name: Normalize APK filenames
+        run: |
+          set -e
+          mkdir -p release-assets
+          for f in apks/*.apk; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f")
+            case "$base" in
+              *universal*)         cp -f "$f" release-assets/SXSEditor-Pad-universal-nightly.apk ;;
+              *arm64-v8a*|*arm64*) cp -f "$f" release-assets/SXSEditor-Pad-arm64-v8a-nightly.apk ;;
+              *armeabi-v7a*|*armv7*) cp -f "$f" release-assets/SXSEditor-Pad-armeabi-v7a-nightly.apk ;;
+              *x86_64*)            cp -f "$f" release-assets/SXSEditor-Pad-x86_64-nightly.apk ;;
+              *)                   cp -f "$f" release-assets/"$base" ;;
+            esac
+          done
+          echo "=== Nightly assets ==="
+          ls -la release-assets/
+
+      - name: Delete previous nightly release and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Recreate from scratch so the `nightly` tag always points at the
+          # latest commit and stale assets never linger.
+          gh release delete nightly --yes --cleanup-tag || true
+          git push origin :refs/tags/nightly 2>/dev/null || true
+
+      - name: Publish nightly prerelease
+        uses: ncipollo/release-action@v1
+        with:
+          tag: nightly
+          name: Nightly Build (${{ needs.build-web.outputs.version }})
+          body: |
+            ## SXSEditor-Pad Nightly Build
+
+            **Automatic rolling build** from `master` @ ${{ github.sha }}.
+            Built ${{ github.event.head_commit.timestamp || github.run_started_at }}.
+
+            > ⚠️ Pre-release channel: expect breakage. For daily use prefer the
+            > [latest stable release](https://github.com/Henley04/SXSEditor-Pad/releases/latest).
+
+            ### Downloads
+            - **universal-nightly** (recommended — works on all Android devices)
+            - **arm64-v8a-nightly** (for modern ARM64 tablets/phones)
+            - **armeabi-v7a-nightly** (for older 32-bit ARM devices)
+            - **x86_64-nightly** (for Android emulators and x86 tablets)
+
+            ### Changes in this build
+            See the [commit history](https://github.com/Henley04/SXSEditor-Pad/commits/master) since the last build.
+          artifacts: "release-assets/*.apk"
+          prerelease: true
+          makeLatest: false
+          allowUpdates: true
+          replacesArtifacts: true
+          token: ${{ github.token }}
