@@ -3764,6 +3764,7 @@ dependencies = [
  "futures-util",
  "half",
  "hound",
+ "libc",
  "libloading 0.8.9",
  "ort",
  "parking_lot",

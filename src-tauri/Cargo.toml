@@ -47,6 +47,9 @@ sha2 = "0.10"
 # Base64 tensor-frame transport (Android IPC fallback path).
 base64 = "0.22"
 parking_lot = "0.12"
+# dlopen/dlsym for runtime NNAPI hardware-driver detection on Android
+# (enumerates real accelerator drivers via libneuralnetworks.so).
+libc = "0.2"
 
 [profile.release]
 panic = "abort"

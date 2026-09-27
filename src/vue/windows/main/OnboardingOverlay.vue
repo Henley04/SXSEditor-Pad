@@ -50,7 +50,7 @@
                 <span class="bench-ep-icon">{{ r.icon }}</span>
                 <span class="bench-ep-name">{{ r.label }}</span>
                 <span v-if="r.available" class="bench-device">{{ r.device }}</span>
-                <span v-else class="bench-unavailable">不支持</span>
+                <span v-else class="bench-unavailable">{{ r.unavailableNote || '不支持' }}</span>
               </div>
               <div v-if="r.available" class="bench-metrics">
                 <span v-if="r.avgMs > 0" class="bench-time">{{ r.avgMs.toFixed(2) }} ms</span>
@@ -313,10 +313,45 @@ async function runBenchmark() {
     return { available: true, avgMs, tops: Number.isFinite(tops) ? tops : 0, iters };
   }
 
+  /**
+   * Native benchmark via the Rust command (native backend only).
+   *
+   * The warmup loop, timed loop and input tensor all live inside Rust — the
+   * measured window contains zero WebView IPC. JS-side timing (benchOne) is
+   * polluted by the ~2MB base64 frame round-trip per run, an overhead
+   * comparable to the inference itself, which under-reports compute
+   * throughput by a large factor.
+   */
+  async function benchNative(devicePref) {
+    if (!window.electronAPI?.nativeOrtBench) {
+      throw new Error('native benchmark command unavailable');
+    }
+    const r = await window.electronAPI.nativeOrtBench(benchModelPath, devicePref);
+    if (!r || r.success !== true) {
+      throw new Error(r?.error || 'native benchmark failed');
+    }
+    // Cross-check throughput from avgMs/iters when gops is absent.
+    const FLOPS_PER_INFER = 4 * 2 * 640 * 640 * 640; // ≈ 2.10 GFLOPs per inference
+    const gops = Number.isFinite(r.gops) && r.gops > 0
+      ? r.gops
+      : (FLOPS_PER_INFER * r.iters / ((r.avgMs / 1000) || 1e-9)) / 1e9;
+    return {
+      available: true,
+      avgMs: r.avgMs,
+      iters: r.iters,
+      gops,
+      tops: gops / 1000,
+      intraThreads: r.intraThreads,
+    };
+  }
+
   // --- CPU benchmark (always available) ---
   try {
     benchStatus.value = '正在测试 CPU 算力...';
-    const r = await benchOne('cpu');
+    const r = native && benchModelPath
+      ? await benchNative('cpu')
+      : await benchOne('cpu');
+    const [speedLabel, speedClass] = benchSpeedRating(r.tops, 'cpu');
     results.push({
       ep: 'cpu',
       label: 'CPU',
@@ -325,8 +360,8 @@ async function runBenchmark() {
       avgMs: r.avgMs,
       tops: r.tops,
       device: getCPUName(deviceInfo),
-      speedLabel: getSpeedLabel(r.avgMs),
-      speedClass: getSpeedClass(r.avgMs),
+      speedLabel,
+      speedClass,
     });
   } catch (err) {
     console.warn('[benchmark] CPU test failed:', err);
@@ -348,15 +383,27 @@ async function runBenchmark() {
   // 保留三行，因为 WebNN 的 deviceType 是真实区分的。
   let accelRows;
   if (native) {
+    // Rust 端已做运行时硬件判定：nnapi=true 表示存在真实 NNAPI 硬件驱动
+    //（dlopen libneuralnetworks.so 枚举到 GPU/NPU 级设备）。无驱动时
+    // NNAPI EP 是 AOSP 参考实现（纯 CPU、比 ORT 自带 MLAS 慢 ~10 倍），
+    // 测出的"算力"是假的 —— 明确展示原因而不是给一个误导性数字。
     accelRows = hasAcceleratorEp(accelerators)
       ? [{
           ep: 'npu',
           label: '加速器',
           icon: '\u{1F9EE}',
-          device: getAcceleratorDeviceLabel(deviceInfo),
+          device: (accelerators.nnapiDevices && accelerators.nnapiDevices.length)
+            ? `NNAPI: ${accelerators.nnapiDevices.join(', ')}`
+            : getAcceleratorDeviceLabel(deviceInfo),
           epBadge: getAcceleratorEpBadge(deviceInfo),
         }]
-      : [];
+      : [{
+          ep: 'npu',
+          label: '加速器',
+          icon: '\u{1F9EE}',
+          device: 'NNAPI',
+          unavailableNote: '无 NNAPI 硬件驱动（已自动改用 CPU；新骁龙 SoC 需 QNN 才能用 NPU）',
+        }];
   } else {
     accelRows = [
       { ep: 'npu', label: 'NPU', icon: '\u{1F9EE}', device: acceleratorLabel(deviceInfo, 'NPU') },
@@ -369,25 +416,28 @@ async function runBenchmark() {
     if (!canUseAccelerator(row.ep)) {
       results.push({
         ep: row.ep, label: row.label, icon: row.icon,
-        available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
+        available: false, avgMs: 0, tops: 0, device: row.device || '',
+        unavailableNote: row.unavailableNote || '', speedLabel: '', speedClass: '',
       });
       continue;
     }
     try {
       benchStatus.value = `正在测试 ${row.label} 算力...`;
-      const r = await benchOne(row.ep);
+      const r = native ? await benchNative(row.ep) : await benchOne(row.ep);
+      const [speedLabel, speedClass] = benchSpeedRating(r.tops, row.ep);
       results.push({
         ep: row.ep, label: row.label, icon: row.icon,
         available: true, avgMs: r.avgMs, tops: r.tops,
         device: row.device,
         epBadge: row.epBadge || '',
-        speedLabel: getSpeedLabel(r.avgMs), speedClass: getSpeedClass(r.avgMs),
+        speedLabel, speedClass,
       });
     } catch (err) {
       console.info(`[benchmark] ${row.label} not available:`, err.message);
       results.push({
         ep: row.ep, label: row.label, icon: row.icon,
-        available: false, avgMs: 0, tops: 0, device: '', speedLabel: '', speedClass: '',
+        available: false, avgMs: 0, tops: 0, device: row.device || '',
+        unavailableNote: row.unavailableNote || '不支持', speedLabel: '', speedClass: '',
       });
     }
   }
@@ -449,6 +499,31 @@ function getSpeedLabel(ms) {
   if (ms < 10) return '中等';
   if (ms < 50) return '较慢';
   return '慢';
+}
+
+/**
+ * Throughput rating for the compute-bound GEMM benchmark (values in TOPS).
+ *
+ * The old wall-time rating (getSpeedLabel) was calibrated for production
+ * model latencies and flagged every benchmark row "慢" — the benchmark
+ * intentionally runs a ~2.1 GFLOP workload, where 100 ms/iter IS the
+ * expected order of magnitude for a single core.
+ *
+ * Reference points:
+ *   CPU  — 8-core MLAS FP32 on 8 Elite ≈ 150-300 GOPS (快);
+ *          single prime core ≈ 20 GOPS (较慢); mid-range 8-core ≈ 40-80.
+ *   NNAPI — Adreno FP16 GEMM ≈ 1-8 TOPS (快); low-end GPU ≈ 200-500 GOPS.
+ */
+function benchSpeedRating(tops, ep) {
+  const g = (tops || 0) * 1000; // TOPS → GOPS
+  if (ep === 'cpu') {
+    if (g >= 80) return ['快', 'speed-fast'];
+    if (g >= 25) return ['中等', 'speed-mid'];
+    return ['较慢', 'speed-slow'];
+  }
+  if (g >= 1000) return ['快', 'speed-fast'];
+  if (g >= 200) return ['中等', 'speed-mid'];
+  return ['较慢', 'speed-slow'];
 }
 
 function getSpeedClass(ms) {

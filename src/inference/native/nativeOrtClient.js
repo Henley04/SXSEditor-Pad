@@ -226,7 +226,7 @@ export async function getNativeStatus() {
  */
 export async function detectNativeAccelerators() {
     if (!window.electronAPI?.nativeOrtDetectAccelerators) {
-        return { nnapi: false, coreml: false, dsp: false, cpu: true };
+        return { nnapi: false, coreml: false, dsp: false, cpu: true, nnapiDevices: [] };
     }
     try {
         const acc = await window.electronAPI.nativeOrtDetectAccelerators();
@@ -235,10 +235,13 @@ export async function detectNativeAccelerators() {
             coreml: Boolean(acc?.coreml),
             dsp: Boolean(acc?.dsp) || Boolean(acc?.nnapi),
             cpu: true,
+            // Runtime-enumerated NNAPI driver names (diagnostics; empty when
+            // the device ships no NNAPI hardware driver).
+            nnapiDevices: Array.isArray(acc?.nnapiDevices) ? acc.nnapiDevices : [],
             raw: acc,
         };
     } catch (_) {
-        return { nnapi: false, coreml: false, dsp: false, cpu: true };
+        return { nnapi: false, coreml: false, dsp: false, cpu: true, nnapiDevices: [] };
     }
 }
 

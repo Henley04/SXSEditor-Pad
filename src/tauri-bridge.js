@@ -280,6 +280,9 @@ const tauriBridge = {
   nativeOrtLoadModel: (modelId, modelPath, options) => invoke('native_ort_load_model', { modelId, modelPath, options: options || null }),
   nativeOrtUnloadModel: (modelId) => invoke('native_ort_unload_model', { modelId }),
   nativeOrtStatus: () => invoke('native_ort_status'),
+  // Native compute benchmark: the timed loop runs inside Rust, tensors never
+  // cross the IPC (JS-side timing is polluted by ~2MB base64 frame transfers).
+  nativeOrtBench: (modelPath, device) => invoke('native_ort_bench', { modelPath, device }),
   // Raw-frame fast path (desktop/iOS): bare Uint8Array → octet-stream body.
   nativeOrtRun: (frameBytes) => invoke('native_ort_run', frameBytes),
   // Android path: base64 JSON (avoids numeric-array serialization cost).

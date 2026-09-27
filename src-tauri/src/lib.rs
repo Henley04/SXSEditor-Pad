@@ -775,6 +775,19 @@ async fn native_ort_run(request: tauri::ipc::Request<'_>) -> Result<tauri::ipc::
     Ok(tauri::ipc::Response::new(out))
 }
 
+/// Native compute benchmark. The timed inference loop runs entirely inside
+/// Rust with a locally-constructed tensor — no WebView IPC in the measured
+/// window (IPC round-trips for ~2MB tensor frames cost about as much as the
+/// inference itself and made JS-side timing useless).
+#[tauri::command]
+async fn native_ort_bench(model_path: String, device: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        inference::ort_engine::bench_device(&model_path, &device)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Base64 frame transport for Android, where invoke() payloads are JSON —
 /// a base64 string parses ~3x faster than a numeric array of the same bytes.
 #[tauri::command]
@@ -1455,6 +1468,7 @@ pub fn run() {
             // Native inference (ORT Mobile / LiteRT)
             native_ort_init,
             native_ort_detect_accelerators,
+            native_ort_bench,
             native_ort_load_model,
             native_ort_unload_model,
             native_ort_status,

@@ -119,17 +119,150 @@ pub struct AcceleratorInfo {
     pub dsp: bool,
 }
 
+/// Android NNAPI device enumeration (runtime, via libneuralnetworks.so).
+///
+/// Qualcomm stopped shipping NNAPI hardware drivers for new SoCs (8 Gen 3 /
+/// 8 Elite and later): Google deprecated NNAPI in favor of vendor SDKs (QNN),
+/// so on those devices the NNAPI EP silently binds to AOSP's `nnapi-reference`
+/// CPU implementation — sessions "succeed" but with zero acceleration. A
+/// compile-time `cfg!(target_os = "android")` cannot tell the two apart, so we
+/// enumerate the actual drivers at runtime.
+#[cfg(target_os = "android")]
+mod nnapi_probe {
+    use std::sync::OnceLock;
+
+    /// Enumerate (device name, device type) pairs. Any failure (missing lib,
+    /// missing symbols, API error) yields an empty list — callers must treat
+    /// that as "no NNAPI hardware".
+    fn devices() -> Vec<(String, i32)> {
+        unsafe {
+            let handle = libc::dlopen(
+                b"libneuralnetworks.so\0".as_ptr() as *const libc::c_char,
+                libc::RTLD_NOW | libc::RTLD_LOCAL,
+            );
+            if handle.is_null() {
+                return Vec::new();
+            }
+            type GetDeviceCount = unsafe extern "C" fn(*mut u32) -> i32;
+            type GetDevice = unsafe extern "C" fn(u32, *mut *mut core::ffi::c_void) -> i32;
+            type DeviceGetName =
+                unsafe extern "C" fn(*const core::ffi::c_void, *mut *const libc::c_char) -> i32;
+            type DeviceGetType = unsafe extern "C" fn(*const core::ffi::c_void, *mut i32) -> i32;
+            let sym = |name: &[u8]| libc::dlsym(handle, name.as_ptr() as *const libc::c_char);
+            let (get_count, get_device, get_name) = match (
+                sym(b"ANeuralNetworks_getDeviceCount\0"),
+                sym(b"ANeuralNetworks_getDevice\0"),
+                sym(b"ANeuralNetworksDevice_getName\0"),
+            ) {
+                (a, b, c) if !a.is_null() && !b.is_null() && !c.is_null() => (a, b, c),
+                _ => return Vec::new(),
+            };
+            // getType requires API 29+; treat as optional.
+            let get_type: Option<DeviceGetType> = match sym(b"ANeuralNetworksDevice_getType\0") {
+                p if p.is_null() => None,
+                p => Some(core::mem::transmute(p)),
+            };
+            let get_count: GetDeviceCount = core::mem::transmute(get_count);
+            let get_device: GetDevice = core::mem::transmute(get_device);
+            let get_name: DeviceGetName = core::mem::transmute(get_name);
+
+            let mut count: u32 = 0;
+            if get_count(&mut count) != 0 || count == 0 {
+                return Vec::new();
+            }
+            let mut out = Vec::new();
+            for i in 0..count {
+                let mut dev: *mut core::ffi::c_void = core::ptr::null_mut();
+                if get_device(i, &mut dev) != 0 || dev.is_null() {
+                    continue;
+                }
+                let mut name_ptr: *const libc::c_char = core::ptr::null();
+                if get_name(dev, &mut name_ptr) != 0 || name_ptr.is_null() {
+                    continue;
+                }
+                let name = std::ffi::CStr::from_ptr(name_ptr).to_string_lossy().into_owned();
+                let mut ty: i32 = 0;
+                if let Some(f) = get_type {
+                    if f(dev, &mut ty) != 0 {
+                        ty = 0;
+                    }
+                }
+                out.push((name, ty));
+            }
+            out
+        }
+    }
+
+    /// Cached device list for the process lifetime (drivers never change).
+    fn devices_cached() -> &'static Vec<(String, i32)> {
+        static CACHE: OnceLock<Vec<(String, i32)>> = OnceLock::new();
+        CACHE.get_or_init(devices)
+    }
+
+    /// True when at least one REAL accelerator driver exists (GPU / NPU-class
+    /// device). The AOSP `nnapi-reference` implementation and plain-CPU entries
+    /// do not count.
+    pub fn has_hardware() -> bool {
+        devices_cached().iter().any(|(name, ty)| {
+            // ANeuralNetworksDeviceType: 0=UNKNOWN 1=OTHER 2=CPU 3=GPU 4=ACCELERATOR
+            matches!(*ty, 3 | 4) || (!name.is_empty() && name != "nnapi-reference")
+        })
+    }
+
+    /// Driver names for diagnostics / UI display.
+    pub fn device_names() -> Vec<String> {
+        devices_cached().iter().map(|(n, _)| n.clone()).collect()
+    }
+}
+
+/// Runtime NNAPI hardware availability (cached). False off-Android.
+fn nnapi_hardware_available() -> bool {
+    #[cfg(target_os = "android")]
+    {
+        nnapi_probe::has_hardware()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        false
+    }
+}
+
+/// Runtime NNAPI driver names (empty off-Android).
+fn nnapi_device_names() -> Vec<String> {
+    #[cfg(target_os = "android")]
+    {
+        nnapi_probe::device_names()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Vec::new()
+    }
+}
+
 fn platform_accelerators() -> AcceleratorInfo {
+    let nnapi_hw = nnapi_hardware_available();
     AcceleratorInfo {
-        // The ORT Mobile build we bundle includes NNAPI on Android and
-        // CoreML on iOS. Registration fails softly if the driver is absent,
-        // so advertising the EP here only means "will be attempted".
-        nnapi: cfg!(target_os = "android"),
+        // Android: NNAPI counts as available only when a REAL hardware driver
+        // exists. Without one the EP is a CPU reference implementation and any
+        // "accelerator" numbers it produces are fiction (measured 2.25 GOPS on
+        // an 8-Elite-class SoC that does 100+ GOPS on CPU alone).
+        nnapi: nnapi_hw,
         coreml: cfg!(target_os = "ios"),
         // DSP acceleration is only available through NNAPI on Android
-        // (Qualcomm Hexagon DSP). On other platforms, DSP is not applicable.
-        dsp: cfg!(target_os = "android"),
+        // (Qualcomm Hexagon DSP) — same hardware-driver requirement.
+        dsp: nnapi_hw,
     }
+}
+
+/// JSON snapshot for the init/status payloads, including the enumerated
+/// NNAPI driver names (diagnostics).
+fn accelerators_json() -> JsonValue {
+    json!({
+        "nnapi": platform_accelerators().nnapi,
+        "coreml": platform_accelerators().coreml,
+        "dsp": platform_accelerators().dsp,
+        "nnapiDevices": nnapi_device_names(),
+    })
 }
 
 struct SessionEntry {
@@ -203,11 +336,7 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
             return json!({
                 "available": true,
                 "libPath": g.lib_path,
-                "accelerators": {
-                    "nnapi": platform_accelerators().nnapi,
-                    "coreml": platform_accelerators().coreml,
-                    "dsp": platform_accelerators().dsp,
-                }
+                "accelerators": accelerators_json()
             });
         }
     }
@@ -230,11 +359,7 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
                         return json!({
                             "available": true,
                             "libPath": display,
-                            "accelerators": {
-                                "nnapi": platform_accelerators().nnapi,
-                                "coreml": platform_accelerators().coreml,
-                                "dsp": platform_accelerators().dsp,
-                            }
+                            "accelerators": accelerators_json()
                         });
                     }
                     Ok(false) => {
@@ -247,11 +372,7 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
                             "available": true,
                             "libPath": display,
                             "note": "environment already initialized",
-                            "accelerators": {
-                                "nnapi": platform_accelerators().nnapi,
-                                "coreml": platform_accelerators().coreml,
-                                "dsp": platform_accelerators().dsp,
-                            }
+                            "accelerators": accelerators_json()
                         });
                     }
                     Err(_) => {
@@ -298,6 +419,19 @@ pub fn is_ready() -> bool {
 fn execution_providers_for(device: &str) -> (Vec<ep::ExecutionProviderDispatch>, String) {
     #[cfg(target_os = "android")]
     {
+        // No real NNAPI hardware driver (e.g. Snapdragon 8 Gen 3/8 Elite):
+        // the NNAPI EP would silently bind to the AOSP reference CPU
+        // implementation, which is ~10x SLOWER than ORT's own MLAS backend.
+        // Degrade every accelerator request to plain CPU instead.
+        if !nnapi_hardware_available() {
+            if device == "cpu" {
+                return (vec![ep::CPU::default().build()], "cpu".to_string());
+            }
+            return (
+                vec![ep::CPU::default().build()],
+                format!("cpu (requested {device}; no NNAPI hardware driver on this device)"),
+            );
+        }
         match device {
             // NNAPI EP internally selects the best available accelerator
             // (NPU first, then GPU, then DSP), and falls back to CPU.
@@ -613,6 +747,120 @@ pub fn unload_model(model_id: &str) -> bool {
     engine().lock().sessions.remove(model_id).is_some()
 }
 
+/// Native compute benchmark: the whole timed loop executes inside Rust with a
+/// locally-constructed input tensor — nothing crosses the WebView IPC.
+///
+/// Measuring from JS (the old approach) pollutes the result: every `run` had
+/// to ship a ~2MB input through base64+JSON IPC and ship the output back, an
+/// overhead comparable to the inference itself (~90ms round-trip), so a
+/// flagship SoC's CPU benchmark was dominated by serialization, not compute.
+///
+/// The model must be the compute-bound GEMM chain produced by
+/// `scripts/generate-benchmark-model.py` (LAYERS=4 chained MatMul [640,640],
+/// ≈2.10 GFLOPs per inference).
+///
+/// `device`: "cpu" | "auto" | "npu" | "gpu" | "dsp" (accelerator prefs fall
+/// back to CPU automatically when no NNAPI hardware driver exists).
+///
+/// Returns `{ success, device, ep, avgMs, iters, intraThreads }`.
+pub fn bench_device(model_path: &str, device: &str) -> Result<JsonValue, String> {
+    if !is_ready() {
+        return Err("ORT environment not initialized (call native_ort_init first)".into());
+    }
+    // Must match the generator script's GEMM dimensions.
+    const S: i64 = 640;
+    const FLOPS_PER_INFER: f64 = (4 * 2 * 640 * 640 * 640) as f64; // ≈ 2.10 GFLOPs
+    const WARMUP_ITERS: usize = 3;
+    const TARGET_MS: u128 = 1500;
+    const MIN_ITERS: usize = 3;
+    const MAX_ITERS: usize = 60;
+
+    let path = Path::new(model_path);
+    if !path.exists() {
+        return Err(format!("benchmark model not found: {}", model_path));
+    }
+
+    let (eps, ep_label) = execution_providers_for(device);
+    let cpu_only = eps.len() == 1;
+
+    let mut builder = Session::builder().map_err(|e| e.to_string())?;
+    builder = builder
+        .with_optimization_level(GraphOptimizationLevel::Level3)
+        .map_err(|e| e.to_string())?
+        .with_execution_providers(eps)
+        .map_err(|e| e.to_string())?;
+    // CPU benchmark: use ALL cores explicitly. ORT's default intra-op thread
+    // policy on some Android builds leaves the session single-threaded, which
+    // under-reports a flagship SoC by ~8x (one Oryon prime core ≈ 20 GOPS,
+    // all 8 cores ≈ 150-300 GOPS). Accelerator EPs manage their own execution;
+    // a single intra thread only affects their CPU-fallback nodes.
+    let intra_threads: usize = if cpu_only {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+    } else {
+        1
+    };
+    builder = builder
+        .with_intra_threads(intra_threads)
+        .map_err(|e| e.to_string())?;
+
+    let mut session = builder
+        .commit_from_file(path)
+        .map_err(|e| format!("benchmark session: {e}"))?;
+
+    let input_name = session
+        .inputs()
+        .first()
+        .map(|i| i.name().to_string())
+        .ok_or_else(|| "benchmark model has no inputs".to_string())?;
+
+    // Dense [S,S] float input with a safe value (no NaN/denormal slowdowns).
+    let tensor = Tensor::from_array((vec![S, S], vec![0.5f32; (S * S) as usize]))
+        .map_err(|e| format!("benchmark input tensor: {e}"))?;
+
+    // Warmup (graph optimizations / NNAPI compilation / frequency ramp).
+    for _ in 0..WARMUP_ITERS {
+        let outputs = session
+            .run(ort::inputs![input_name.as_str() => &tensor])
+            .map_err(|e| format!("benchmark warmup: {e}"))?;
+        drop(outputs);
+    }
+
+    let t0 = std::time::Instant::now();
+    let mut iters = 0usize;
+    loop {
+        let outputs = session
+            .run(ort::inputs![input_name.as_str() => &tensor])
+            .map_err(|e| format!("benchmark run: {e}"))?;
+        drop(outputs);
+        iters += 1;
+        let elapsed = t0.elapsed();
+        if elapsed.as_millis() >= TARGET_MS && iters >= MIN_ITERS {
+            break;
+        }
+        if iters >= MAX_ITERS {
+            break;
+        }
+    }
+    let elapsed_s = t0.elapsed().as_secs_f64();
+    if elapsed_s <= 0.0 || iters == 0 {
+        return Err("benchmark timing unavailable".into());
+    }
+    let avg_ms = elapsed_s * 1000.0 / iters as f64;
+    let gops = FLOPS_PER_INFER * iters as f64 / elapsed_s / 1e9;
+
+    Ok(json!({
+        "success": true,
+        "device": device,
+        "ep": ep_label,
+        "avgMs": (avg_ms * 100.0).round() / 100.0,
+        "iters": iters,
+        "intraThreads": intra_threads,
+        "gops": (gops * 100.0).round() / 100.0,
+    }))
+}
+
 /// Status snapshot for diagnostics / the resource-manager UI.
 pub fn status() -> JsonValue {
     let eng = engine();
@@ -632,11 +880,7 @@ pub fn status() -> JsonValue {
         "available": g.env_ready,
         "libPath": g.lib_path,
         "sessions": sessions,
-        "accelerators": {
-            "nnapi": platform_accelerators().nnapi,
-            "coreml": platform_accelerators().coreml,
-            "dsp": platform_accelerators().dsp,
-        }
+        "accelerators": accelerators_json()
     })
 }
 
