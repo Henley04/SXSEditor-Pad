@@ -172,3 +172,17 @@
 1. 主窗口 bundle 拆分（见 D4）。
 2. `renderFragmentTimeline()` 在网格缓存命中路径仍会全量绘制分片与文本，长工程下可再做视口裁剪（风险较高，本次未动）。
 3. 平板竖屏（短边 <768px）下的分片编辑器布局建议单独走一版响应式（当前只到 600px 断点）。
+
+---
+
+## 十、补充轮：运行时回归修复（`ff26e8b`）
+
+真机验收发现音频预处理窗口完全不可用（波形空白、文件名 `-`、「提取MIDI」报「未选择音频文件」、标题显示原始键名 `preprocess.audioPreprocess`）。定位为 2 个根因 + 同类缺键清扫：
+
+| # | 严重度 | 问题 | 根因 | 修复 |
+|---|--------|------|------|------|
+| F1 | 严重 | 音频预处理窗口收不到任何音频数据 | `src/audioPreprocess/ipcHandlers.js` 把初始化挂在 `DOMContentLoaded` 监听器上，但 Vue 入口在 app mount **之后**才动态 import 该模块——事件早已派发，监听器永不执行，Rust handoff / SPA mailbox 里的音频无人消费 | 按 `document.readyState` 分流：仍在 loading 才监听事件，否则立即引导 |
+| F2 | 中 | 窗口标题显示键名 `preprocess.audioPreprocess` | zh-CN/en 字典缺该键，`t()` 回退返回键名 | 两语言补键 |
+| F3 | 中 | 分片编辑器检查器/状态栏、fragmentEditor 窗口标题、删除歌手确认框、设置页预览重叠参数均显示原始键名 | 同类缺键：`fragmentEditor.title`、`fragment.inspSinger/inspNote/inspPhoneme/statusReady/statusSampleRate`、`main.confirmDeleteSinger`；`PreviewParamsSection.vue` 误引不存在的 `settings.previewDiffStepChunkOverlapFrames(+Hint)` | 全仓扫描 923 处 i18n 引用后补齐/改指到语义相同的已有键 `previewDiffStepOverlapFrames(+Hint)` |
+
+补充验证：i18n 缺键扫描归零；`npm test` 1347 passing / 0 failing；`vite build` 通过。
