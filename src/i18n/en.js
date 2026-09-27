@@ -26,6 +26,7 @@ export default {
     addFragment: 'Add Fragment',
     deleteFragment: 'Delete Fragment',
     confirmDeleteFragment: 'Delete fragment "{name}"?',
+    confirmDeleteSinger: 'Delete singer "{name}"?',
     deleteSinger: 'Delete Singer',
     synthesizing: 'Synthesizing...',
     synthesizingProgress: 'Synthesizing {progress}%',
@@ -218,8 +219,16 @@ export default {
     enterFullscreen: 'Enter Fullscreen',
     exitFullscreen: 'Exit Fullscreen'
   },
+  fragmentEditor: {
+    title: 'Fragment Editor'
+  },
   fragment: {
     title: 'Fragment Editor',
+    inspSinger: 'Singer',
+    inspNote: 'Note Properties',
+    inspPhoneme: 'Phoneme',
+    statusReady: 'Ready',
+    statusSampleRate: 'Sample Rate',
     loadingModel: 'Loading inference model, please wait...',
     save: 'Save',
     close: 'Close',
@@ -392,6 +401,7 @@ export default {
   },
   preprocess: {
     title: 'Audio Preprocessing',
+    audioPreprocess: 'Audio Preprocess',
     play: 'Play',
     pause: 'Pause',
     rmvpeExtractF0: 'RMVPE Extract F0',

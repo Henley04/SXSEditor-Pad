@@ -41,7 +41,13 @@ function normalizeHandoff(data) {
 }
 
 export function setupIpcHandlers() {
-  window.addEventListener('DOMContentLoaded', async () => {
+  // The Vue entry (entries/audioPreprocess.js) dynamically imports this module
+  // AFTER the app mounts, so DOMContentLoaded has already fired by then — a
+  // listener registered at that point would never run and the audio handoff
+  // would be dropped (waveform stays blank, extraction reports "no audio").
+  // Branch on readyState: only wait for the event while the document is still
+  // loading (classic HTML entry); otherwise bootstrap immediately.
+  const bootstrap = async () => {
     try {
       const ipc = window.electronAPI;
 
@@ -116,5 +122,11 @@ export function setupIpcHandlers() {
       console.error(t('preprocess.initFailed'), err);
       showAlertDialog(t('preprocess.initFailed') + ': ' + err.message);
     }
-  });
+  };
+
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', bootstrap, { once: true });
+  } else {
+    bootstrap();
+  }
 }

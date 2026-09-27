@@ -26,6 +26,7 @@ export default {
     addFragment: '添加分片',
     deleteFragment: '删除分片',
     confirmDeleteFragment: '确认删除分片 "{name}"？',
+    confirmDeleteSinger: '确认删除歌手 "{name}"？',
     deleteSinger: '删除歌手',
     synthesizing: '合成中...',
     synthesizingProgress: '合成中 {progress}%',
@@ -218,8 +219,16 @@ export default {
     enterFullscreen: '进入全屏',
     exitFullscreen: '退出全屏'
   },
+  fragmentEditor: {
+    title: '分片编辑器'
+  },
   fragment: {
     title: '分片编辑',
+    inspSinger: '歌手',
+    inspNote: '音符属性',
+    inspPhoneme: '音素',
+    statusReady: '就绪',
+    statusSampleRate: '采样率',
     loadingModel: '正在加载推理模型，请稍候...',
     save: '保存',
     close: '关闭',
@@ -392,6 +401,7 @@ export default {
   },
   preprocess: {
     title: '音频预处理',
+    audioPreprocess: '音频预处理',
     play: '播放',
     pause: '暂停',
     rmvpeExtractF0: 'RMVPE提取F0',

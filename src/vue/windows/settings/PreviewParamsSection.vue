@@ -71,12 +71,12 @@
       </div>
       <div class="setting-group">
         <label for="previewDiffStepOverlapFrames">
-          <span>{{ $t('settings.previewDiffStepChunkOverlapFrames') }}</span>
+          <span>{{ $t('settings.previewDiffStepOverlapFrames') }}</span>
           <span class="volume-display">{{ store.previewParams.chunkOverlapFrames }}</span>
         </label>
         <input type="range" id="previewDiffStepOverlapFrames" min="0" max="200" step="10"
           :value="store.previewParams.chunkOverlapFrames" @input="store.setPreviewChunkOverlapFrames($event.target.value)">
-        <p class="hint">{{ $t('settings.previewDiffStepChunkOverlapFramesHint') }}</p>
+        <p class="hint">{{ $t('settings.previewDiffStepOverlapFramesHint') }}</p>
       </div>
     </div>
   </div>
