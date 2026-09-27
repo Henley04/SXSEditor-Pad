@@ -132,8 +132,15 @@ async function writeBenchmarkModelToDisk(modelBytes) {
     }
     const sep = tempDir.includes('\\') ? '\\' : '/';
     const benchPath = tempDir + sep + 'sxs-onboarding-benchmark.onnx';
-    // Use the Rust command directly — bypasses fs plugin capability issues
-    await window.electronAPI.writeBinaryFile(benchPath, Array.from(modelBytes));
+    // Hand the bytes over as ONE base64 string. A Uint8Array argument would be
+    // serialized into a multi-million-element JSON array across the WebView
+    // IPC, which stalls or fails on Android for multi-MB models.
+    let bin = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < modelBytes.length; i += CHUNK) {
+      bin += String.fromCharCode.apply(null, modelBytes.subarray(i, i + CHUNK));
+    }
+    await window.electronAPI.writeBinaryFileB64(benchPath, btoa(bin));
     console.log('[benchmark] Model written to:', benchPath);
     return benchPath;
   } catch (err) {
@@ -205,9 +212,9 @@ async function runBenchmark() {
     }
   }
 
-  // Test data: [S, S] float32 GEMM input (S=768) — the benchmark model is a
+  // Test data: [S, S] float32 GEMM input (S=640) — the benchmark model is a
   // compute-bound MatMul chain, so the input is a plain dense matrix.
-  const BENCH_S = 768;
+  const BENCH_S = 640;
   const inputSize = BENCH_S * BENCH_S;
   const inputData = new Float32Array(inputSize);
   for (let i = 0; i < inputSize; i++) {
@@ -296,12 +303,12 @@ async function runBenchmark() {
       throw new Error('benchmark timing unavailable');
     }
     // Measured throughput: the benchmark model is a compute-bound GEMM chain —
-    // LAYERS=4 chained MatMul [768,768]x[768,768], FLOPs = 4 * 2 * 768^3.
+    // LAYERS=4 chained MatMul [640,640]x[640,640], FLOPs = 4 * 2 * 640^3.
     // Dense GEMM saturates CPU (MLAS FP32) and accelerator (NNAPI/CoreML FP16)
     // alike, so the reported value approximates real peak hardware throughput
     // instead of per-layer dispatch overhead (the old conv-stack workload was
     // memory-bound and reported ~45 GOPS on a flagship SoC).
-    const FLOPS_PER_INFER = 4 * 2 * 768 * 768 * 768; // ≈ 3.62 GFLOPs
+    const FLOPS_PER_INFER = 4 * 2 * 640 * 640 * 640; // ≈ 2.10 GFLOPs
     const tops = (FLOPS_PER_INFER * iters / (elapsed * 1e-3)) / 1e12;
     return { available: true, avgMs, tops: Number.isFinite(tops) ? tops : 0, iters };
   }

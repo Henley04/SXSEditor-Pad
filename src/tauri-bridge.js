@@ -198,6 +198,10 @@ const tauriBridge = {
 
   // Binary file I/O (for onboarding benchmark model persistence)
   writeBinaryFile: (path, data) => invoke('write_binary_file', { path, data }),
+  // Multi-MB payloads (benchmark ONNX model) MUST go through base64: a
+  // Uint8Array/number-array argument is serialized into a multi-million-element
+  // JSON array across the WebView IPC and stalls or fails on Android.
+  writeBinaryFileB64: (path, dataB64) => invoke('write_binary_file_b64', { path, dataB64 }),
   deleteFile: (path) => invoke('delete_file', { path }),
   getTempDir: () => invoke('get_temp_dir'),
 

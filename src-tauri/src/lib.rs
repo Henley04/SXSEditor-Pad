@@ -66,6 +66,26 @@ async fn write_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
     std::fs::write(&path, &data).map_err(|e| e.to_string())
 }
 
+/// Write binary data to a file from a base64 string.
+///
+/// The benchmark model (multi-MB) MUST be handed over this way: passing it as
+/// `Vec<u8>` makes the WebView serialize a multi-million-element JSON number
+/// array across the IPC bridge (Array.from + JSON), which stalls or fails on
+/// Android. A single base64 string is one fast JSON string value instead.
+#[tauri::command]
+async fn write_binary_file_b64(path: String, data_b64: String) -> Result<(), String> {
+    use base64::Engine as _;
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(data_b64.as_bytes())
+        .map_err(|e| format!("decode base64 failed: {}", e))?;
+    if let Some(parent) = std::path::Path::new(&path).parent() {
+        if !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
+    std::fs::write(&path, &data).map_err(|e| e.to_string())
+}
+
 /// Delete a file. Used to clean up the temporary benchmark model.
 #[tauri::command]
 async fn delete_file(path: String) -> Result<(), String> {
@@ -1367,6 +1387,7 @@ pub fn run() {
             read_file,
             read_file_buffer,
             write_binary_file,
+            write_binary_file_b64,
             delete_file,
             get_temp_dir,
             file_exists,
