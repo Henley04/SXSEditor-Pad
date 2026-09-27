@@ -226,7 +226,7 @@ export async function getNativeStatus() {
  */
 export async function detectNativeAccelerators() {
     if (!window.electronAPI?.nativeOrtDetectAccelerators) {
-        return { nnapi: false, coreml: false, dsp: false, cpu: true, nnapiDevices: [] };
+        return { nnapi: false, coreml: false, dsp: false, qnn: false, cpu: true, nnapiDevices: [], qnnBackend: null };
     }
     try {
         const acc = await window.electronAPI.nativeOrtDetectAccelerators();
@@ -234,6 +234,11 @@ export async function detectNativeAccelerators() {
             nnapi: Boolean(acc?.nnapi),
             coreml: Boolean(acc?.coreml),
             dsp: Boolean(acc?.dsp) || Boolean(acc?.nnapi),
+            // QNN (Hexagon NPU): Qualcomm SoC + device-side QNN backend found.
+            // The ORT factory may still be absent from the bundled .so — that
+            // degrades through the EP candidate chain at session commit.
+            qnn: Boolean(acc?.qnn),
+            qnnBackend: acc?.qnnBackend || null,
             cpu: true,
             // Runtime-enumerated NNAPI driver names (diagnostics; empty when
             // the device ships no NNAPI hardware driver).
@@ -241,11 +246,11 @@ export async function detectNativeAccelerators() {
             raw: acc,
         };
     } catch (_) {
-        return { nnapi: false, coreml: false, dsp: false, cpu: true, nnapiDevices: [] };
+        return { nnapi: false, coreml: false, dsp: false, qnn: false, cpu: true, nnapiDevices: [], qnnBackend: null };
     }
 }
 
-/** 任一硬件加速器 EP 是否可用（Android NNAPI / iOS CoreML）。 */
+/** 任一硬件加速器 EP 是否可用（Android QNN/NNAPI、iOS CoreML）。 */
 export function hasAcceleratorEp(acc) {
-    return Boolean(acc && (acc.nnapi || acc.coreml));
+    return Boolean(acc && (acc.qnn || acc.nnapi || acc.coreml));
 }

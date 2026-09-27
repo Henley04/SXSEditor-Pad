@@ -182,7 +182,7 @@ fn run_cmd(prog: &str, args: &[&str]) -> Option<String> {
 
 /// Best-effort CPU / SoC name. Returns None when the platform has no cheap,
 /// dependency-free source; the renderer then falls back to the User-Agent.
-fn device_cpu_name() -> Option<String> {
+pub(crate) fn device_cpu_name() -> Option<String> {
     #[cfg(target_os = "android")]
     {
         // SoC model is the most useful label (e.g. "Snapdragon 8 Gen 3").

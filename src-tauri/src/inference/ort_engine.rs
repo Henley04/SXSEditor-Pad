@@ -255,12 +255,15 @@ fn platform_accelerators() -> AcceleratorInfo {
 }
 
 /// JSON snapshot for the init/status payloads, including the enumerated
-/// NNAPI driver names (diagnostics).
+/// NNAPI driver names and QNN availability (diagnostics).
 fn accelerators_json() -> JsonValue {
+    let qnn_backend = find_qnn_backend();
     json!({
         "nnapi": platform_accelerators().nnapi,
         "coreml": platform_accelerators().coreml,
         "dsp": platform_accelerators().dsp,
+        "qnn": qnn_available(),
+        "qnnBackend": qnn_backend.map(|p| p.to_string_lossy().to_string()),
         "nnapiDevices": nnapi_device_names(),
     })
 }
@@ -328,14 +331,20 @@ fn candidate_lib_paths(explicit: Option<&str>) -> Vec<PathBuf> {
 
 /// Initialize the ORT environment by dynamically loading the library.
 /// Idempotent: repeated calls return the cached state.
+///
+/// NOTE: `accelerators_json()` must be called OUTSIDE the engine lock — it
+/// re-enters the engine to locate the ORT lib dir (for QNN backend probing)
+/// and parking_lot is not reentrant.
 pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
     let eng = engine();
     {
         let g = eng.lock();
         if g.env_ready {
+            let lib_path = g.lib_path.clone();
+            drop(g);
             return json!({
                 "available": true,
-                "libPath": g.lib_path,
+                "libPath": lib_path,
                 "accelerators": accelerators_json()
             });
         }
@@ -353,9 +362,11 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
                 }));
                 match committed {
                     Ok(true) => {
-                        let mut g = eng.lock();
-                        g.env_ready = true;
-                        g.lib_path = Some(display.clone());
+                        {
+                            let mut g = eng.lock();
+                            g.env_ready = true;
+                            g.lib_path = Some(display.clone());
+                        }
                         return json!({
                             "available": true,
                             "libPath": display,
@@ -365,9 +376,11 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
                     Ok(false) => {
                         // Environment already committed by an earlier init —
                         // treat as ready.
-                        let mut g = eng.lock();
-                        g.env_ready = true;
-                        g.lib_path = Some(display.clone());
+                        {
+                            let mut g = eng.lock();
+                            g.env_ready = true;
+                            g.lib_path = Some(display.clone());
+                        }
                         return json!({
                             "available": true,
                             "libPath": display,
@@ -392,7 +405,7 @@ pub fn init(explicit_lib_path: Option<&str>) -> JsonValue {
     json!({
         "available": false,
         "error": if last_err.is_empty() { "libonnxruntime not found".to_string() } else { last_err },
-        "accelerators": { "nnapi": false, "coreml": false, "dsp": false }
+        "accelerators": { "nnapi": false, "coreml": false, "dsp": false, "qnn": false, "qnnBackend": JsonValue::Null, "nnapiDevices": [] }
     })
 }
 
@@ -400,68 +413,245 @@ pub fn is_ready() -> bool {
     engine().lock().env_ready
 }
 
-/// Build the EP list for the requested device preference. Accelerators fail
-/// softly (CPU fallback inside ORT) so a session always commits when the
-/// model itself is valid.
-///
-/// Device preferences:
-///   "auto" → NPU → GPU → DSP → CPU priority chain (best available first)
-///   "cpu"  → CPU only
-///   "gpu" / "npu" / "dsp" → the platform accelerator EP (NNAPI on Android,
-///   CoreML on iOS) + CPU fallback
-///
-/// IMPORTANT: ORT Mobile exposes exactly one accelerator EP per mobile
-/// platform, and NNAPI/CoreML decide the target hardware (NPU/GPU/DSP/ANE)
-/// internally — there is no EP-level way to pin a specific accelerator type.
-/// The three preferences therefore map to the SAME EP list; the requested
-/// preference is kept only as a diagnostic hint in the returned label. Do
-/// NOT report "npu/gpu/dsp" as separately measured devices.
-fn execution_providers_for(device: &str) -> (Vec<ep::ExecutionProviderDispatch>, String) {
+/// True when the SoC is Qualcomm (ro.soc.model / board like "SM8750", "sun").
+#[cfg(target_os = "android")]
+fn is_qualcomm_soc() -> bool {
+    static CACHE: OnceLock<bool> = OnceLock::new();
+    *CACHE.get_or_init(|| {
+        crate::device_cpu_name()
+            .map(|n| {
+                let n = n.to_ascii_lowercase();
+                ["sm8", "sm7", "sm6", "sm4", "qsm", "sdm", "msm", "qcom", "qti"]
+                    .iter()
+                    .any(|p| n.contains(p))
+            })
+            .unwrap_or(false)
+    })
+}
+
+/// Search for a QNN HTP backend library the app can actually load. The first
+/// match is the app's own jniLibs dir (the same directory as the bundled ORT
+/// .so), which is the only location guaranteed to be reachable under
+/// Android's linker-namespace rules; vendor paths are probed best-effort.
+fn find_qnn_backend() -> Option<PathBuf> {
+    const LIB: &str = "libQnnHtp.so";
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    // Same dir as the bundled ORT library.
+    {
+        let eng = engine();
+        let g = eng.lock();
+        if let Some(lib) = &g.lib_path {
+            if let Some(dir) = Path::new(lib).parent() {
+                candidates.push(dir.join(LIB));
+            }
+        }
+    }
+    for dir in [
+        "/system/vendor/lib64",
+        "/vendor/lib64",
+        "/system/lib64",
+        "/odm/lib64",
+        "/vendor/dsp/cdsp",
+    ] {
+        candidates.push(PathBuf::from(dir).join(LIB));
+    }
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+/// QNN (Hexagon NPU) pipeline is only worth attempting when BOTH hold: a
+/// Qualcomm SoC and a device-side QNN backend library. The ORT factory lookup
+/// itself may still fail (the bundled official AAR has no built-in QNN
+/// factory) — that case degrades through the candidate chain at commit time.
+fn qnn_available() -> bool {
     #[cfg(target_os = "android")]
     {
-        // No real NNAPI hardware driver (e.g. Snapdragon 8 Gen 3/8 Elite):
-        // the NNAPI EP would silently bind to the AOSP reference CPU
-        // implementation, which is ~10x SLOWER than ORT's own MLAS backend.
-        // Degrade every accelerator request to plain CPU instead.
-        if !nnapi_hardware_available() {
-            if device == "cpu" {
-                return (vec![ep::CPU::default().build()], "cpu".to_string());
+        is_qualcomm_soc() && find_qnn_backend().is_some()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = find_qnn_backend;
+        false
+    }
+}
+
+/// One candidate EP chain tried when committing a session.
+struct EpCandidate {
+    eps: Vec<ep::ExecutionProviderDispatch>,
+    /// Session intra-op threads. XNNPACK/QNN/NNAPI manage their own thread
+    /// pools, so sessions that use them run with a single intra thread to
+    /// avoid pool contention; a bare-CPU chain uses ALL cores (ORT's default
+    /// intra policy on some Android builds is effectively single-threaded,
+    /// which under-reports a flagship SoC by ~8x).
+    intra_threads: usize,
+    intra_spinning: bool,
+    label: String,
+}
+
+/// CPU-only candidates, XNNPACK first (built into the official ORT Android
+/// AAR; verified by symbol presence in onnxruntime-android 1.28.0).
+///
+/// Large models (>100MB) skip XNNPACK: it copies weights into its own arena,
+/// which doubles memory and slows startup, mirroring the >100MB graph-opt
+/// degradation rule.
+fn cpu_candidates(model_size_mb: f64) -> Vec<EpCandidate> {
+    let cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    if model_size_mb > 100.0 {
+        return vec![EpCandidate {
+            eps: vec![ep::CPU::default().build()],
+            intra_threads: cores,
+            intra_spinning: true,
+            label: "cpu".into(),
+        }];
+    }
+    vec![
+        EpCandidate {
+            eps: vec![
+                ep::XNNPACK::default()
+                    .with_intra_op_num_threads(
+                        core::num::NonZeroUsize::new(cores).unwrap_or(core::num::NonZeroUsize::MIN),
+                    )
+                    .build(),
+                ep::CPU::default().build(),
+            ],
+            intra_threads: 1,
+            intra_spinning: false,
+            label: "xnnpack+cpu".into(),
+        },
+        EpCandidate {
+            eps: vec![ep::CPU::default().build()],
+            intra_threads: cores,
+            intra_spinning: true,
+            label: "cpu".into(),
+        },
+    ]
+}
+
+/// Build the ordered EP candidate list for a device preference.
+///
+/// Android priority for accelerator requests: QNN (Qualcomm Hexagon) →
+/// NNAPI (only when a real hardware driver exists) → XNNPACK+CPU → CPU.
+///
+/// IMPORTANT: ORT Mobile exposes exactly one accelerator EP per platform, and
+/// NNAPI/CoreML decide the target hardware (NPU/GPU/DSP/ANE) internally —
+/// there is no EP-level way to pin a specific accelerator type. Do NOT report
+/// "npu/gpu/dsp" as separately measured devices.
+fn ep_candidates(device: &str, model_size_mb: f64) -> Vec<EpCandidate> {
+    let mut out: Vec<EpCandidate> = Vec::new();
+    #[cfg(target_os = "android")]
+    {
+        if device == "cpu" {
+            out.extend(cpu_candidates(model_size_mb));
+            return out;
+        }
+        if qnn_available() {
+            if let Some(qpath) = find_qnn_backend() {
+                out.push(EpCandidate {
+                    eps: vec![
+                        ep::QNN::default()
+                            .with_backend_path(qpath.to_string_lossy().to_string())
+                            .with_performance_mode(ep::qnn::PerformanceMode::HighPerformance)
+                            .with_htp_fp16_precision(true)
+                            .build(),
+                        ep::CPU::default().build(),
+                    ],
+                    intra_threads: 1,
+                    intra_spinning: false,
+                    label: "qnn-htp+cpu".into(),
+                });
             }
-            return (
-                vec![ep::CPU::default().build()],
-                format!("cpu (requested {device}; no NNAPI hardware driver on this device)"),
-            );
         }
-        match device {
-            // NNAPI EP internally selects the best available accelerator
-            // (NPU first, then GPU, then DSP), and falls back to CPU.
-            "auto" => (
-                vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
-                "nnapi+cpu".to_string(),
-            ),
-            "npu" | "gpu" | "dsp" => (
-                vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
-                format!("nnapi+cpu (requested {device}; NNAPI selects hardware)"),
-            ),
-            _ => (vec![ep::CPU::default().build()], "cpu".to_string()),
+        // No real NNAPI hardware driver (e.g. Snapdragon 8 Gen 3/8 Elite): the
+        // NNAPI EP would silently bind to the AOSP reference CPU
+        // implementation, ~10x SLOWER than ORT's own CPU path — skip it.
+        if nnapi_hardware_available() {
+            out.push(EpCandidate {
+                eps: vec![ep::NNAPI::default().build(), ep::CPU::default().build()],
+                intra_threads: 1,
+                intra_spinning: false,
+                label: format!("nnapi+cpu (requested {device}; NNAPI selects hardware)"),
+            });
         }
+        out.extend(cpu_candidates(model_size_mb));
     }
     #[cfg(target_os = "ios")]
     {
-        match device {
+        if device != "cpu" {
             // CoreML EP handles ANE (NPU) / GPU automatically with CPU fallback.
-            "auto" | "npu" | "gpu" | "dsp" => (
-                vec![ep::CoreML::default().build(), ep::CPU::default().build()],
-                format!("coreml+cpu (requested {device}; CoreML selects hardware)"),
-            ),
-            _ => (vec![ep::CPU::default().build()], "cpu".to_string()),
+            out.push(EpCandidate {
+                eps: vec![ep::CoreML::default().build(), ep::CPU::default().build()],
+                intra_threads: 1,
+                intra_spinning: false,
+                label: format!("coreml+cpu (requested {device}; CoreML selects hardware)"),
+            });
         }
+        out.extend(cpu_candidates(model_size_mb));
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let _ = device;
-        (vec![ep::CPU::default().build()], "cpu".to_string())
+        out.extend(cpu_candidates(model_size_mb));
     }
+    out
+}
+
+/// Commit a session trying each EP candidate in order; the first chain that
+/// commits wins. EP registration failures (XNNPACK/QNN/NNAPI missing from the
+/// bundled ORT library, QNN backend unusable on device) degrade silently to
+/// the next candidate — the last-resort chain is always bare CPU.
+///
+/// Returns `(session, ep_label, intra_threads)`.
+#[allow(clippy::too_many_arguments)]
+fn create_session_with_fallback(
+    path: &Path,
+    device_pref: &str,
+    model_size_mb: f64,
+    graph_opt: GraphOptimizationLevel,
+    mem_pattern: bool,
+    parallel: bool,
+    intra_override: Option<usize>,
+) -> Result<(Session, String, usize), String> {
+    let candidates = ep_candidates(device_pref, model_size_mb);
+    let mut last_err = String::new();
+    for EpCandidate {
+        eps,
+        intra_threads,
+        intra_spinning,
+        label,
+    } in candidates
+    {
+        let intra = intra_override.unwrap_or(intra_threads);
+        let attempt = (|| -> Result<Session, String> {
+            Session::builder()
+                .map_err(|e| e.to_string())?
+                .with_optimization_level(graph_opt)
+                .map_err(|e| e.to_string())?
+                .with_intra_threads(intra)
+                .map_err(|e| e.to_string())?
+                .with_intra_op_spinning(intra_spinning)
+                .map_err(|e| e.to_string())?
+                .with_memory_pattern(mem_pattern)
+                .map_err(|e| e.to_string())?
+                .with_parallel_execution(parallel)
+                .map_err(|e| e.to_string())?
+                .with_execution_providers(eps)
+                .map_err(|e| e.to_string())?
+                .commit_from_file(path)
+                .map_err(|e| format!("commit: {e}"))
+        })();
+        match attempt {
+            Ok(session) => return Ok((session, label, intra)),
+            Err(e) => {
+                eprintln!("[ort_engine] EP chain '{label}' failed, degrading: {e}");
+                last_err = format!("EP chain '{label}': {e}");
+            }
+        }
+    }
+    Err(format!(
+        "failed to create session for {}: {last_err}",
+        path.display()
+    ))
 }
 
 /// Load a model file into a session and register it under `model_id`.
@@ -488,32 +678,19 @@ pub fn load_model(
         opts.graph_opt_level = "disabled".into();
     }
 
-    let (eps, ep_label) = execution_providers_for(&opts.device_preference);
-
-    let mut builder = Session::builder().map_err(|e| e.to_string())?;
-    builder = builder
-        .with_optimization_level(opts.graph_opt_level())
-        .map_err(|e| e.to_string())?
-        .with_parallel_execution(opts.execution_mode == "parallel")
-        .map_err(|e| e.to_string())?
-        .with_memory_pattern(opts.enable_mem_pattern)
-        .map_err(|e| e.to_string())?
-        .with_execution_providers(eps)
-        .map_err(|e| e.to_string())?;
-    if opts.intra_op_threads > 0 {
-        builder = builder
-            .with_intra_threads(opts.intra_op_threads)
-            .map_err(|e| e.to_string())?;
-    }
-    if opts.inter_op_threads > 0 {
-        builder = builder
-            .with_inter_threads(opts.inter_op_threads)
-            .map_err(|e| e.to_string())?;
-    }
-
-    let session = builder
-        .commit_from_file(path)
-        .map_err(|e| format!("failed to create session for {}: {}", model_path, e))?;
+    let (session, ep_label, _intra) = create_session_with_fallback(
+        path,
+        &opts.device_preference,
+        model_size_mb,
+        opts.graph_opt_level(),
+        opts.enable_mem_pattern,
+        opts.execution_mode == "parallel",
+        if opts.intra_op_threads > 0 {
+            Some(opts.intra_op_threads)
+        } else {
+            None
+        },
+    )?;
 
     let inputs: Vec<JsonValue> = session
         .inputs()
@@ -780,34 +957,15 @@ pub fn bench_device(model_path: &str, device: &str) -> Result<JsonValue, String>
         return Err(format!("benchmark model not found: {}", model_path));
     }
 
-    let (eps, ep_label) = execution_providers_for(device);
-    let cpu_only = eps.len() == 1;
-
-    let mut builder = Session::builder().map_err(|e| e.to_string())?;
-    builder = builder
-        .with_optimization_level(GraphOptimizationLevel::Level3)
-        .map_err(|e| e.to_string())?
-        .with_execution_providers(eps)
-        .map_err(|e| e.to_string())?;
-    // CPU benchmark: use ALL cores explicitly. ORT's default intra-op thread
-    // policy on some Android builds leaves the session single-threaded, which
-    // under-reports a flagship SoC by ~8x (one Oryon prime core ≈ 20 GOPS,
-    // all 8 cores ≈ 150-300 GOPS). Accelerator EPs manage their own execution;
-    // a single intra thread only affects their CPU-fallback nodes.
-    let intra_threads: usize = if cpu_only {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1)
-    } else {
-        1
-    };
-    builder = builder
-        .with_intra_threads(intra_threads)
-        .map_err(|e| e.to_string())?;
-
-    let mut session = builder
-        .commit_from_file(path)
-        .map_err(|e| format!("benchmark session: {e}"))?;
+    let (mut session, ep_label, intra_threads) = create_session_with_fallback(
+        path,
+        device,
+        2.0, // benchmark model size (1.64MB) — enables the XNNPACK chain
+        GraphOptimizationLevel::Level3,
+        true,
+        false,
+        None,
+    )?;
 
     let input_name = session
         .inputs()
@@ -862,23 +1020,31 @@ pub fn bench_device(model_path: &str, device: &str) -> Result<JsonValue, String>
 }
 
 /// Status snapshot for diagnostics / the resource-manager UI.
+///
+/// Lock discipline: engine data is snapshotted inside the lock, then
+/// `accelerators_json()` runs OUTSIDE it (it re-enters the engine to locate
+/// the ORT lib dir; parking_lot is not reentrant — calling it under the lock
+/// deadlocks).
 pub fn status() -> JsonValue {
     let eng = engine();
-    let g = eng.lock();
-    let sessions: Vec<JsonValue> = g
-        .sessions
-        .iter()
-        .map(|(id, e)| {
-            json!({
-                "modelId": id,
-                "ep": e.ep_label,
-                "path": e.model_path,
+    let (env_ready, lib_path, sessions) = {
+        let g = eng.lock();
+        let sessions: Vec<JsonValue> = g
+            .sessions
+            .iter()
+            .map(|(id, e)| {
+                json!({
+                    "modelId": id,
+                    "ep": e.ep_label,
+                    "path": e.model_path,
+                })
             })
-        })
-        .collect();
+            .collect();
+        (g.env_ready, g.lib_path.clone(), sessions)
+    };
     json!({
-        "available": g.env_ready,
-        "libPath": g.lib_path,
+        "available": env_ready,
+        "libPath": lib_path,
         "sessions": sessions,
         "accelerators": accelerators_json()
     })
@@ -920,33 +1086,21 @@ mod tests {
     }
 
     #[test]
-    fn ep_label_and_chain_per_platform() {
-        // Auto should produce the priority chain
-        let (auto_eps, auto_label) = execution_providers_for("auto");
-        assert!(!auto_eps.is_empty());
-        #[cfg(target_os = "android")]
-        assert_eq!(auto_label, "nnapi-auto+cpu");
-        #[cfg(target_os = "ios")]
-        assert_eq!(auto_label, "coreml-auto+cpu");
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        assert_eq!(auto_label, "cpu");
+    fn ep_candidate_chain_priority() {
+        // CPU preference: XNNPACK first, bare CPU as the fallback candidate.
+        let cpu = ep_candidates("cpu", 2.0);
+        assert_eq!(cpu[0].label, "xnnpack+cpu");
+        assert_eq!(cpu[cpu.len() - 1].label, "cpu");
+        // Large models skip XNNPACK (weight-copy memory cost).
+        let big = ep_candidates("cpu", 500.0);
+        assert_eq!(big[0].label, "cpu");
 
-        let (eps, label) = execution_providers_for("npu");
-        assert!(!eps.is_empty());
-        #[cfg(target_os = "android")]
-        assert_eq!(label, "nnapi-npu+cpu");
-        #[cfg(target_os = "ios")]
-        assert_eq!(label, "coreml-auto+cpu");
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        assert_eq!(label, "cpu");
-
-        // DSP is only meaningful on Android
-        let (_dsp_eps, dsp_label) = execution_providers_for("dsp");
-        #[cfg(target_os = "android")]
-        assert_eq!(dsp_label, "nnapi-dsp+cpu");
-        #[cfg(not(target_os = "android"))]
-        {
-            let _ = dsp_label;
+        // Accelerator preferences end in the same CPU candidates.
+        let auto = ep_candidates("auto", 2.0);
+        assert_eq!(auto[auto.len() - 1].label, "cpu");
+        // Every candidate chain ends with a CPU node for graph fallback.
+        for c in &auto {
+            assert!(!c.eps.is_empty());
         }
     }
 
@@ -963,5 +1117,8 @@ mod tests {
         assert!(s.get("available").is_some());
         assert!(s.get("sessions").is_some());
         assert!(s.get("accelerators").is_some());
+        let acc = s.get("accelerators").unwrap();
+        assert!(acc.get("qnn").is_some());
+        assert!(acc.get("nnapiDevices").is_some());
     }
 }

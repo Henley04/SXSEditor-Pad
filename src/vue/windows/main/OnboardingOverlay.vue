@@ -392,10 +392,12 @@ async function runBenchmark() {
           ep: 'npu',
           label: '加速器',
           icon: '\u{1F9EE}',
-          device: (accelerators.nnapiDevices && accelerators.nnapiDevices.length)
-            ? `NNAPI: ${accelerators.nnapiDevices.join(', ')}`
-            : getAcceleratorDeviceLabel(deviceInfo),
-          epBadge: getAcceleratorEpBadge(deviceInfo),
+          device: accelerators.qnn
+            ? 'QNN (Hexagon NPU)'
+            : (accelerators.nnapiDevices && accelerators.nnapiDevices.length)
+              ? `NNAPI: ${accelerators.nnapiDevices.join(', ')}`
+              : getAcceleratorDeviceLabel(deviceInfo),
+          epBadge: accelerators.qnn ? 'QNN EP' : getAcceleratorEpBadge(deviceInfo),
         }]
       : [{
           ep: 'npu',
