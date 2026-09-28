@@ -2,7 +2,7 @@
 
 ## 概述
 
-本项目包含全面的自动化测试套件，共 **1019 个测试用例**，覆盖所有核心模块。测试分为单元测试、集成测试和属性/鲁棒性测试三层，旨在通过多维度覆盖全面保障应用质量。
+本项目包含全面的自动化测试套件，共 **50+ 个测试文件**，覆盖所有核心模块。测试分为单元测试、集成测试和属性/鲁棒性测试三层，旨在通过多维度覆盖全面保障应用质量。
 
 ## 测试结构
 
@@ -14,7 +14,6 @@ test/
 ├── 单元测试
 │   ├── wavEncoder.test.js            # WAV 编码器
 │   ├── trackManager.test.js          # 轨道管理
-│   ├── nativeSvsPipeline.test.js     # SVS Pipeline 纯逻辑
 │   ├── rmvpePitchDetector.test.js    # RMVPE 音高检测器
 │   ├── basicPitch.test.js            # Basic Pitch 工具函数
 │   ├── preprocessing.test.js         # 前处理（音符编码、F0）
@@ -32,18 +31,14 @@ test/
 │   ├── themeValidator.test.js        # 主题校验
 │   ├── historyManager.test.js        # 撤销/重做历史
 │   ├── ipcChannels.test.js           # IPC 通道
-│   ├── security.test.js              # 安全相关
 │   ├── midiParser.test.js            # MIDI 解析
 │   ├── modelPaths.test.js            # 模型路径
-│   ├── languageDetection.test.js     # 语言检测
 │   ├── audioFormatUtils.test.js      # 音频格式工具
 │   ├── audioOutputManager.test.js    # 音频输出管理
-│   ├── batchProcessing.test.js       # 批量处理
 │   ├── resampleAudio.test.js         # 音频重采样
 │   └── utilsMisc.test.js             # 杂项工具
 │
 ├── 集成测试
-│   ├── pipelineIntegration.test.js       # 跨模块数据流
 │   └── crossModuleIntegration.test.js    # 30 个跨模块深度集成测试
 │
 └── 属性/鲁棒性测试
@@ -58,17 +53,13 @@ test/
 npm test
 ```
 
-### 远程 CI 精简测试
+### CI 精简测试
 
 ```bash
 npm run test:ci
 ```
 
-远程 CI 使用精简测试套件，跳过以下不适用于 CI 环境的测试：
-
-- `onnxModelLoading.test.js` — ONNX 模型加载与推理（需要本地 ONNX 模型文件和 DML EP）
-
-本地开发时仍应运行 `npm test` 执行完整测试套件。
+> 注意：`test:ci` 与 `test` 当前执行完全相同的 Mocha 命令，CI 中使用的是相同的 `npx mocha` 调用（见 `.github/workflows/ci.yml`）。
 
 ### 带代码覆盖率
 
@@ -97,7 +88,6 @@ npx mocha --require ./test/setup.js "test/robustness.test.js" --timeout 30000
 覆盖所有核心模块的纯逻辑：
 - **WAV 编码器**: 文件头格式、采样率、位深度、声道、空输入和大文件
 - **轨道管理**: 歌手/分片 CRUD、活动分片、颜色分配
-- **SVS Pipeline**: MIDI→频率、包络插值、F0 量化、帧序列、音符嵌入
 - **RMVPE 音高检测**: 重采样、索引↔F0、F0→MIDI、音符分组
 - **Basic Pitch**: MIDI/Hz 转换、高斯函数、argMax、统计计算
 - **前处理**: 音符编码、F0 构建、phoneme 序列、mel2token、slur 分类
@@ -109,18 +99,9 @@ npx mocha --require ./test/setup.js "test/robustness.test.js" --timeout 30000
 - **Float16 转换**: IEEE 754 半精度往返、subnormal、overflow
 - **主题系统**: colorUtils、themeManager、storage、tokens、validator
 - **撤销/重做**: 命令栈、maxSize、clear
-- **其他**: IPC、安全、MIDI 解析、模型路径、语言检测、批量处理
+- **其他**: IPC、MIDI 解析、模型路径
 
 ### 集成测试 (30+ tests)
-
-#### pipelineIntegration.test.js
-- F0 量化端到端流程
-- 音频重采样管道
-- F0 到音符转换管道
-- WAV 编码往返测试
-- 音符嵌入帧重复
-- 歌手-分片生命周期管理
-- 跨模块采样率一致性
 
 #### crossModuleIntegration.test.js
 - **G2P→Preprocessing 全链路**: 中/日/英歌词完整转换、多音符、phonemeAdjustments
@@ -159,14 +140,14 @@ npx mocha --require ./test/setup.js "test/robustness.test.js" --timeout 30000
 ## 已知限制
 
 - **N_FFT=1920 不是 2 的幂**（1920 = 128×15）：JS fallback `extractMelSpectrogram` 对非 2 幂尺寸产生错误结果。生产路径使用 ONNX `mel_transform` 模型，不依赖 JS FFT。单元测试中仅验证结构，不验证数值正确性。
-- **ONNX 模型推理测试** 需要在完整 Electron 环境中运行，当前测试套件专注于纯逻辑和算法正确性。
-- **UI 测试** 需要额外的 Electron 测试框架（如 Spectron）。
+- **ONNX 模型推理测试** 需要在完整的 Tauri v2 应用环境中运行（Rust 侧原生 ONNX Runtime），当前测试套件专注于纯逻辑和算法正确性。
+- **UI 测试** 需要额外的 Tauri/WebDriver 测试框架（如 tauri-driver）。
 
 ## 技术栈
 
 - **Mocha**: 测试框架
 - **Chai**: 断言库（expect 风格）
-- **Sinon**: Mock 和 stub（用于 Electron API）
+- **Sinon**: Mock 和 stub（用于 Tauri API）
 - **JSDOM**: 浏览器环境模拟（用于前端代码测试）
 - **NYC**: 代码覆盖率工具
 - **Babel**: ES6+ 代码转译
@@ -215,15 +196,19 @@ describe('MyModule', () => {
 
 ## CI/CD 集成
 
-GitHub Actions CI 使用 `npm run test:ci` 运行精简测试套件（跳过网络功能和模型推理/加载测试）：
+GitHub Actions CI 使用 `npm run test:ci` 运行测试套件：
 
 ```yaml
 # GitHub Actions 示例（实际配置见 .github/workflows/ci.yml）
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -234,15 +219,13 @@ jobs:
       - run: npm run test:ci
 ```
 
-## 测试覆盖率目标
+## 代码覆盖率
 
-- **行覆盖率**: > 80%
-- **分支覆盖率**: > 70%
-- **函数覆盖率**: > 85%
-
-查看覆盖率报告：
+使用 NYC 生成覆盖率报告：
 
 ```bash
 npm run test:coverage
 # 打开 coverage/index.html 查看详细报告
 ```
+
+项目未设置强制覆盖率门禁。

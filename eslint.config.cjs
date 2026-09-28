@@ -127,6 +127,7 @@ module.exports = [
             'src/utils/escapeHtml.js',
             'src/utils/gpuCache.js',
             'src/utils/deviceNames.js',
+            'src/utils/safeArea.js',
         ],
         languageOptions: {
             sourceType: 'module',

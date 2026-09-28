@@ -16,7 +16,7 @@
 
 ---
 
-SXSEditor-Pad is a mobile-optimized port of [SXSEditor](https://github.com/Henley04/SXSEditor), built with **Tauri v2** for cross-platform mobile and desktop support. It is an open-source singing voice synthesis workstation that runs the SoulX-Singer neural model through ONNX Runtime Web with WebNN NPU/GPU acceleration.
+SXSEditor-Pad is a mobile-optimized port of [SXSEditor](https://github.com/Henley04/SXSEditor), built with **Tauri v2** for cross-platform mobile and desktop support. It is an open-source singing voice synthesis workstation that runs the SoulX-Singer neural model through native ONNX Runtime (Rust, `ort` crate with `load-dynamic`), with `onnxruntime-web` (WebNN/WASM) available as a renderer-side fallback path.
 
 Supported singing languages: **English**, **Chinese (Mandarin)**, and **Japanese**.
 
@@ -39,14 +39,14 @@ Supported singing languages: **English**, **Chinese (Mandarin)**, and **Japanese
 | Framework | [Tauri v2](https://v2.tauri.app/) (Rust + WebView) |
 | Frontend | Vue 3, Pinia, CSS3, HTML5 |
 | Bundler | Vite 5 |
-| Model Runtime | ONNX Runtime Web (WebNN / WASM) |
-| Additional AI | TensorFlow.js (Basic Pitch) |
+| Model Runtime | Native ONNX Runtime (Rust `ort` crate, `load-dynamic`); `onnxruntime-web` (WebNN/WASM) as renderer-side fallback |
+| Additional AI | TensorFlow.js WASM (Basic Pitch, renderer) / TensorFlow Lite via `libtensorflowlite_c` (Rust) |
 | Backend | Rust with Tauri plugins |
-| Mobile | Android (APK) / iOS (IPA) |
+| Mobile | Android (APK) / iOS (planned, in progress) |
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) 18+
+- [Node.js](https://nodejs.org/) 18+ (CI uses Node.js 22)
 - [Rust](https://www.rust-lang.org/) (latest stable)
 - [Tauri CLI](https://v2.tauri.app/start/cli/) (`cargo install tauri-cli --version "^2.0"`)
 - For Android builds: Android SDK, NDK, JDK 17
@@ -96,10 +96,16 @@ npm run lint
 ```
 SXSEditor-Pad/
 ├── src/                    # Frontend source code
-│   ├── renderer/           # Main window renderer
-│   ├── fragmentEditor/     # Fragment editor window
+│   ├── assets/             # Static frontend assets
+│   ├── audio/              # Audio processing utilities
 │   ├── audioPreprocess/    # Audio preprocessing
+│   ├── editor/             # Editor core logic
+│   ├── entries/            # Secondary window entry points
+│   ├── fragmentEditor/     # Fragment editor window
 │   ├── inference/          # Model inference pipeline
+│   ├── renderer/           # Main window renderer
+│   ├── shared/             # Shared constants and IPC channels
+│   ├── spa/                # SPA routing helpers
 │   ├── themes/             # Theme system
 │   ├── i18n/               # Internationalization
 │   ├── icons/              # Icon system
@@ -116,13 +122,15 @@ SXSEditor-Pad/
 
 ## Model Inference
 
-SXSEditor-Pad uses native ONNX Runtime for model inference with platform-specific acceleration:
+The primary inference path is native ONNX Runtime on the Rust side, via the `ort` crate with `load-dynamic` (the runtime library is loaded at startup). Platform-specific execution providers:
 
-- **Android** - NNAPI acceleration
+- **Android** - NNAPI / QNN (Hexagon) / XNNPACK candidate chain, CPU fallback
 - **iOS** - CoreML acceleration
-- **Desktop** - CPU/WebNN/DirectML depending on platform
+- **Desktop** - CPU (MLAS)
 
-Additional AI features use TensorFlow Lite (Basic Pitch for audio-to-MIDI conversion).
+`onnxruntime-web` (WebNN/WASM) remains available as a renderer-side fallback/auxiliary path.
+
+Basic Pitch (audio-to-MIDI) has two implementations: TensorFlow.js WASM in the renderer, or TensorFlow Lite via dynamically loaded `libtensorflowlite_c` (LiteRT) on the Rust side.
 
 Models are downloaded from [ModelScope](https://modelscope.cn) and cached locally.
 
@@ -130,17 +138,16 @@ Models are downloaded from [ModelScope](https://modelscope.cn) and cached locall
 
 The project uses GitHub Actions for CI/CD:
 
-- **CI** - Lint, test, and web build on every push
-- **Build APK** - Build Android APKs for arm64-v8a, armeabi-v7a, and x86_64
-- **Release** - Create GitHub releases with APK artifacts when tagging with `v*`
+- **CI** - Lint, Rust checks/tests, and web build on pushes and pull requests targeting `master`/`main`
+- **Build APK** - Build Android APKs for arm64-v8a, armeabi-v7a, and x86_64 on pushes to `master`/`main`; creates a GitHub release with APK artifacts on `v*` tags (Release is a job within this workflow)
 
 ## Roadmap
 
 - [x] Tauri v2 migration
 - [x] Touch-friendly UI
-- [x] ONNX Runtime Web integration
+- [x] ONNX Runtime integration
 - [x] Android APK build pipeline
-- [ ] iOS IPA build pipeline
+- [ ] iOS IPA build pipeline (planned, in progress)
 - [ ] Performance optimization for mobile NPU
 - [ ] In-app model download manager
 - [ ] Cloud sync for projects

@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts
       - name: ESLint
-        run: npx eslint src test --ext .js || true
+        run: npx eslint src test --ext .js
       - name: Run tests
         run: npx mocha --require ./test/setup.js "test/**/*.test.js" --timeout 30000 --reporter spec
       - name: Build
@@ -49,7 +49,10 @@ jobs:
           workspaces: src-tauri
       - name: Cargo fmt check
         working-directory: src-tauri
-        run: cargo fmt --check || true
+        run: cargo fmt --check
       - name: Cargo check
         working-directory: src-tauri
-        run: cargo check
+        run: cargo check --locked
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test
