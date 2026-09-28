@@ -165,8 +165,62 @@ describe('nativeOrtClient', () => {
       await session.release();
       await session.release();
       expect(window.electronAPI.nativeOrtUnloadModel.calledOnce).to.equal(true);
-      expect(window.electronAPI.nativeOrtUnloadModel.firstCall.args[0]).to.equal('m3');
+      // 旧后端 load 响应无 sessionToken → 回传 null（退化为旧协议）
+      expect(window.electronAPI.nativeOrtUnloadModel.firstCall.args).to.deep.equal(['m3', null]);
       await expectAsyncThrow(() => session.run({}));
+    });
+
+    it('release 回传 load 响应中的 sessionToken', async () => {
+      mockApi({
+        nativeOrtLoadModel: sinon.stub().resolves({
+          success: true,
+          sessionToken: 12345,
+          inputs: [],
+          outputs: [],
+        }),
+      });
+      client.__setNativeAvailableForTests(true);
+      const session = await client.NativeInferenceSession.create(new ArrayBuffer(0), {
+        __modelPath: '/m.onnx', __modelId: 'mToken',
+      });
+      await session.release();
+      expect(window.electronAPI.nativeOrtUnloadModel.firstCall.args).to.deep.equal(['mToken', 12345]);
+    });
+
+    it('平台探测失败不缓存：倾向 b64 且下次 run 重新探测', async () => {
+      const outBytes = new Float32Array([42]);
+      const hb = new TextEncoder().encode(JSON.stringify({
+        v: 1, outputs: [{ name: 'embeddings', dtype: 'float32', shape: [1], offset: 0, length: 4 }],
+      }));
+      const frame = new Uint8Array(4 + hb.length + 4);
+      new DataView(frame.buffer).setUint32(0, hb.length, true);
+      frame.set(hb, 4);
+      frame.set(new Uint8Array(outBytes.buffer), 4 + hb.length);
+
+      // 首次探测瞬时失败，第二次成功返回桌面平台
+      const platformStub = sinon.stub()
+        .onFirstCall().rejects(new Error('transient probe failure'))
+        .onSecondCall().resolves({ platform: 'linux', isMobile: false });
+      const rawRunStub = sinon.stub().resolves(frame.buffer);
+      mockApi({
+        getPlatformInfo: platformStub,
+        nativeOrtRunB64: sinon.stub().resolves({ frameB64: codec.bytesToBase64(frame) }),
+        nativeOrtRun: rawRunStub,
+      });
+      client.__setNativeAvailableForTests(true);
+
+      const session = await client.NativeInferenceSession.create(new ArrayBuffer(0), {
+        __modelPath: '/m.onnx', __modelId: 'm4',
+      });
+      const feeds = { input_ids: { data: new BigInt64Array([1n]), dims: [1, 1], type: 'int64' } };
+      // 第一次 run：探测失败 → unknown + isMobile 非 false → 倾向 b64
+      await session.run(feeds);
+      expect(window.electronAPI.nativeOrtRunB64.calledOnce).to.equal(true);
+      expect(rawRunStub.callCount).to.equal(0);
+      // 第二次 run：重新探测成功（未被缓存钉死）→ 确认桌面 → octet-stream
+      await session.run(feeds);
+      expect(platformStub.callCount).to.equal(2);
+      expect(rawRunStub.calledOnce).to.equal(true);
     });
   });
 

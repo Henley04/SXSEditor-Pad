@@ -146,14 +146,20 @@ pub fn split_frame(frame: &[u8]) -> Result<(&[u8], &[u8]), String> {
         return Err(format!("frame too small: {} bytes", frame.len()));
     }
     let header_len = u32::from_le_bytes([frame[0], frame[1], frame[2], frame[3]]) as usize;
-    if frame.len() < 4 + header_len {
+    // header_len comes from untrusted frame bytes; on 32-bit targets
+    // `4 + header_len` can overflow (release builds have no overflow checks
+    // and abort on panic), so compute the boundary with checked arithmetic.
+    let header_end = header_len
+        .checked_add(4)
+        .ok_or("invalid frame: header length overflow")?;
+    if frame.len() < header_end {
         return Err(format!(
             "frame truncated: header_len={} but frame is {} bytes",
             header_len,
             frame.len()
         ));
     }
-    Ok((&frame[4..4 + header_len], &frame[4 + header_len..]))
+    Ok((&frame[4..header_end], &frame[header_end..]))
 }
 
 /// Decode a run-request frame into the model id and its input tensors.

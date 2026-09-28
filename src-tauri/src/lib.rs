@@ -92,12 +92,19 @@ async fn delete_file(path: String) -> Result<(), String> {
     std::fs::remove_file(&path).map_err(|e| e.to_string())
 }
 
-/// Return the OS temp directory. Used by the onboarding benchmark so the
-/// temporary benchmark model is never written into the user's model download
-/// directory.
+/// Return a writable scratch directory for the onboarding benchmark's
+/// temporary model. `std::env::temp_dir()` is not writable on Android (no
+/// global /tmp), so use the app cache dir — the per-app writable equivalent —
+/// keeping the benchmark model out of the user's model download directory.
 #[tauri::command]
-async fn get_temp_dir() -> Result<String, String> {
-    Ok(std::env::temp_dir().to_string_lossy().to_string())
+async fn get_temp_dir(app: AppHandle) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("resolve cache dir failed: {}", e))?
+        .join("bench");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create bench dir failed: {}", e))?;
+    Ok(dir.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -747,8 +754,13 @@ async fn native_ort_load_model(
 }
 
 #[tauri::command]
-async fn native_ort_unload_model(model_id: String) -> Result<Value, String> {
-    Ok(json!({ "unloaded": inference::ort_engine::unload_model(&model_id) }))
+async fn native_ort_unload_model(
+    model_id: String,
+    session_token: Option<u64>,
+) -> Result<Value, String> {
+    Ok(json!({
+        "unloaded": inference::ort_engine::unload_model(&model_id, session_token),
+    }))
 }
 
 #[tauri::command]

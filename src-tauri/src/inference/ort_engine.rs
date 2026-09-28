@@ -274,6 +274,11 @@ struct SessionEntry {
     session: Mutex<Session>,
     ep_label: String,
     model_path: String,
+    /// Monotonic id assigned at load time. Lets the renderer's release carry
+    /// the token of the session it *thinks* it is unloading, so a stale
+    /// release after an EP-candidate timeout cannot kill a newer session
+    /// registered under the same model id.
+    token: u64,
 }
 
 /// Global engine state. The environment is process-global in ONNX Runtime;
@@ -282,6 +287,8 @@ pub struct OrtEngine {
     env_ready: bool,
     lib_path: Option<String>,
     sessions: HashMap<String, Arc<SessionEntry>>,
+    /// Last session token handed out; always accessed under the engine lock.
+    next_token: u64,
 }
 
 static ENGINE: OnceLock<Arc<Mutex<OrtEngine>>> = OnceLock::new();
@@ -293,6 +300,7 @@ pub fn engine() -> Arc<Mutex<OrtEngine>> {
                 env_ready: false,
                 lib_path: None,
                 sessions: HashMap::new(),
+                next_token: 0,
             }))
         })
         .clone()
@@ -713,16 +721,27 @@ pub fn load_model(
         })
         .collect();
 
-    let entry = Arc::new(SessionEntry {
-        session: Mutex::new(session),
-        ep_label: ep_label.clone(),
-        model_path: model_path.to_string(),
-    });
-    engine().lock().sessions.insert(model_id.to_string(), entry);
+    // Allocate the session token and register the entry under one lock hold
+    // so a token always refers to exactly the session it was issued for.
+    let token = {
+        let mut g = engine().lock();
+        g.next_token += 1;
+        g.sessions.insert(
+            model_id.to_string(),
+            Arc::new(SessionEntry {
+                session: Mutex::new(session),
+                ep_label: ep_label.clone(),
+                model_path: model_path.to_string(),
+                token: g.next_token,
+            }),
+        );
+        g.next_token
+    };
 
     Ok(json!({
         "success": true,
         "ep": ep_label,
+        "sessionToken": token,
         "inputs": inputs,
         "outputs": outputs,
         "modelSizeMB": (model_size_mb * 10.0).round() / 10.0,
@@ -920,8 +939,21 @@ pub fn run_frame(request_frame: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 /// Unload a session. Returns true if one was registered.
-pub fn unload_model(model_id: &str) -> bool {
-    engine().lock().sessions.remove(model_id).is_some()
+///
+/// `expected_token` implements the renderer contract for the EP-candidate
+/// chain: a release issued after a timeout carries the `sessionToken` returned
+/// by `load_model`. If the currently registered session under `model_id` has a
+/// different token (i.e. it was replaced by a newer successful load), the
+/// unload is a no-op that reports false instead of killing the newer session.
+/// Passing no token keeps the legacy always-remove behaviour.
+pub fn unload_model(model_id: &str, expected_token: Option<u64>) -> bool {
+    let mut g = engine().lock();
+    if let Some(t) = expected_token {
+        if g.sessions.get(model_id).map(|e| e.token) != Some(t) {
+            return false;
+        }
+    }
+    g.sessions.remove(model_id).is_some()
 }
 
 /// Native compute benchmark: the whole timed loop executes inside Rust with a

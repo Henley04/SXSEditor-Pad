@@ -278,7 +278,9 @@ const tauriBridge = {
   nativeOrtInit: (libPath) => invoke('native_ort_init', { libPath: libPath || null }),
   nativeOrtDetectAccelerators: () => invoke('native_ort_detect_accelerators'),
   nativeOrtLoadModel: (modelId, modelPath, options) => invoke('native_ort_load_model', { modelId, modelPath, options: options || null }),
-  nativeOrtUnloadModel: (modelId) => invoke('native_ort_unload_model', { modelId }),
+  // sessionToken 为可选的会话令牌（load 响应颁发，unload 回传校验，
+  // 不匹配时 Rust 侧不删除）；旧后端无 token 时传 null，退化为旧协议。
+  nativeOrtUnloadModel: (modelId, sessionToken) => invoke('native_ort_unload_model', { modelId, sessionToken: sessionToken ?? null }),
   nativeOrtStatus: () => invoke('native_ort_status'),
   // Native compute benchmark: the timed loop runs inside Rust, tensors never
   // cross the IPC (JS-side timing is polluted by ~2MB base64 frame transfers).

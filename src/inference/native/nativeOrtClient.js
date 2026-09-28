@@ -37,11 +37,20 @@ let _platformInfo = null;
 async function getPlatform() {
     if (_platformInfo) return _platformInfo;
     try {
-        _platformInfo = await window.electronAPI?.getPlatformInfo?.() || { platform: 'unknown', isMobile: false };
+        const info = await window.electronAPI?.getPlatformInfo?.();
+        // 仅缓存有效探测结果（拿到确定的平台标识）；unknown/缺失不缓存，
+        // 允许下次 run 重新探测，避免一次瞬时失败被永久钉死
+        if (info && typeof info.platform === 'string' && info.platform !== 'unknown') {
+            _platformInfo = info;
+            return info;
+        }
+        // 探测不完整：platform 记为 unknown，保留可能拿到的 isMobile
+        return { platform: 'unknown', isMobile: info?.isMobile ?? null };
     } catch (_) {
-        _platformInfo = { platform: 'unknown', isMobile: false };
+        // 探测失败：返回临时 fallback（isMobile 置 null，通道选择时倾向
+        // b64——b64 通道兼容性最好），不缓存，下次 run 时重试
+        return { platform: 'unknown', isMobile: null };
     }
-    return _platformInfo;
 }
 
 /** 测试注入用 */
@@ -58,6 +67,10 @@ export class NativeInferenceSession {
     constructor(modelId, meta) {
         this._modelId = modelId;
         this._released = false;
+        // 会话令牌：Rust 侧 load 时颁发（u64，>0），unload 时回传校验，
+        // 不匹配则不删除——防止同 modelId 的新会话被孤儿会话的迟到卸载误删。
+        // 旧后端无此字段 → null（unload 退化为仅凭 modelId 的旧协议）。
+        this._sessionToken = meta.sessionToken ?? null;
         // onnxruntime-web 兼容元数据（_warmupSession 使用）
         this.inputMetadata = (meta.inputs || []).map((i) => ({
             name: i.name,
@@ -112,8 +125,14 @@ export class NativeInferenceSession {
         if (this._released) throw new Error(`session ${this._modelId} has been released`);
         const frame = encodeRunFrame(this._modelId, feeds);
         const platform = await getPlatform();
+        // 传输通道选择：b64 通道兼容性最好——Android 必走（JSON 序列化下
+        // base64 比数字数组快约 3 倍）；平台未知（探测失败）时倾向 b64；
+        // 仅在确认 iOS / 桌面非移动时走 octet-stream 原始字节。
+        const useB64 = platform.platform === 'android'
+            || (platform.platform === 'unknown' && platform.isMobile !== false)
+            || (platform.isMobile === true && platform.platform !== 'ios' && platform.platform !== 'unknown');
         let responseBytes;
-        if (platform.platform === 'android') {
+        if (useB64) {
             const res = await window.electronAPI.nativeOrtRunB64(bytesToBase64(frame));
             if (!res || !res.frameB64) throw new Error('native_ort_run_b64: empty response');
             responseBytes = base64ToBytes(res.frameB64);
@@ -128,7 +147,9 @@ export class NativeInferenceSession {
         if (this._released) return;
         this._released = true;
         try {
-            await window.electronAPI.nativeOrtUnloadModel(this._modelId);
+            // 回传 sessionToken：Rust 侧校验，token 不匹配（该 modelId 已被
+            // 新会话占用，如 EP 候选链超时后的孤儿会话）时自动 no-op
+            await window.electronAPI.nativeOrtUnloadModel(this._modelId, this._sessionToken);
         } catch (_) { /* 卸载失败不影响释放语义 */ }
     }
 }
